@@ -1,0 +1,8 @@
+.next
+node_modules
+.env*.local
+.idea
+dist
+coverage
+*.tsbuildinfo
+vercel.json
