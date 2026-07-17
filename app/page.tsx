@@ -75,6 +75,8 @@ type PhotoItem = {
 
 const supabase = hasSupabaseConfig ? createSupabaseClient() : null;
 const memoryPhotoClass = "h-full w-full object-cover grayscale contrast-125 brightness-90";
+const retroPhotoSize = 640;
+const retroPhotoQuality = 0.56;
 type OpenPhoto = (id: string, photos: PhotoItem[]) => void;
 type ShareTarget =
   | { type: "connections" }
@@ -1029,8 +1031,8 @@ function RetroCamera({
           audio: false,
           video: {
             facingMode: { ideal: facingMode },
-            width: { ideal: 640 },
-            height: { ideal: 640 }
+            width: { ideal: 960 },
+            height: { ideal: 960 }
           }
         });
         if (!mounted) {
@@ -1060,18 +1062,18 @@ function RetroCamera({
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
 
-    const size = Math.min(video.videoWidth || 320, video.videoHeight || 320);
+    const size = Math.min(video.videoWidth || retroPhotoSize, video.videoHeight || retroPhotoSize);
     const sourceX = Math.max(0, ((video.videoWidth || size) - size) / 2);
     const sourceY = Math.max(0, ((video.videoHeight || size) - size) / 2);
-    canvas.width = 320;
-    canvas.height = 320;
+    canvas.width = retroPhotoSize;
+    canvas.height = retroPhotoSize;
 
     const context = canvas.getContext("2d");
     if (!context) return;
 
     context.filter = "grayscale(1) contrast(1.35) brightness(0.92)";
-    context.drawImage(video, sourceX, sourceY, size, size, 0, 0, 320, 320);
-    onCapture(canvas.toDataURL("image/jpeg", 0.42));
+    context.drawImage(video, sourceX, sourceY, size, size, 0, 0, retroPhotoSize, retroPhotoSize);
+    onCapture(canvas.toDataURL("image/jpeg", retroPhotoQuality));
   }
 
   function switchCamera() {
@@ -1118,7 +1120,7 @@ function RetroCamera({
         >
           <span className="block h-full w-full rounded-full bg-white" />
         </button>
-        <p className="text-right text-xs uppercase tracking-[0.16em] text-white/55">320px</p>
+        <p className="text-right text-xs uppercase tracking-[0.16em] text-white/55">{retroPhotoSize}px</p>
       </div>
       <canvas ref={canvasRef} className="hidden" />
     </div>
