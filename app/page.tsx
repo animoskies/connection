@@ -19,6 +19,7 @@ import {
   Sun,
   Trash2,
   User,
+  UserPlus,
   Users
 } from "lucide-react";
 import { DateTime } from "luxon";
@@ -31,6 +32,7 @@ type Profile = {
   username: string;
   display_name: string;
   preferred_timezone: string;
+  avatar_url: string | null;
 };
 
 type Group = {
@@ -61,6 +63,7 @@ type PhotoItem = {
   ownerId: string;
   title: string;
   owner: string;
+  ownerAvatar: string;
   groupId: string | null;
   group: string;
   shareScope: "private" | "connections" | "group";
@@ -77,6 +80,7 @@ const supabase = hasSupabaseConfig ? createSupabaseClient() : null;
 const memoryPhotoClass = "h-full w-full object-cover grayscale contrast-125 brightness-90";
 const retroPhotoSize = 640;
 const retroPhotoQuality = 0.56;
+const avatarPhotoSize = 320;
 type OpenPhoto = (id: string, photos: PhotoItem[]) => void;
 type ShareTarget =
   | { type: "connections" }
@@ -134,6 +138,37 @@ function dataUrlToBlob(dataUrl: string) {
     array[index] = bytes.charCodeAt(index);
   }
   return new Blob([array], { type: mime });
+}
+
+function imageFileToAvatarBlob(file: File) {
+  return new Promise<Blob>((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = document.createElement("canvas");
+      canvas.width = avatarPhotoSize;
+      canvas.height = avatarPhotoSize;
+      const size = Math.min(image.naturalWidth, image.naturalHeight);
+      const sourceX = Math.max(0, (image.naturalWidth - size) / 2);
+      const sourceY = Math.max(0, (image.naturalHeight - size) / 2);
+      const context = canvas.getContext("2d");
+      if (!context) {
+        reject(new Error("Could not prepare profile picture."));
+        return;
+      }
+      context.drawImage(image, sourceX, sourceY, size, size, 0, 0, avatarPhotoSize, avatarPhotoSize);
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("Could not prepare profile picture."));
+      }, "image/jpeg", 0.72);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not read that image."));
+    };
+    image.src = url;
+  });
 }
 
 export default function Home() {
@@ -430,6 +465,8 @@ export default function Home() {
 
   const activeGroup = groups.find((group) => group.id === activeGroupId) ?? null;
   const allPhotos = photos;
+  const homePhotos = photos.filter((photo) => photo.groupId === null);
+  const connectionPhotos = homePhotos.filter((photo) => photo.shareScope === "connections");
   const selectedPhoto = allPhotos.find((photo) => photo.id === selectedPhotoId) ?? null;
   const viewerPhotos = viewerPhotoIds
     .map((id) => allPhotos.find((photo) => photo.id === id))
@@ -486,9 +523,7 @@ export default function Home() {
               className="grid h-11 w-11 place-items-center rounded-full border border-line bg-white/90 text-ink shadow-sm dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
               onClick={() => setAccountOpen((value) => !value)}
             >
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-skysoft text-sm font-semibold text-ink">
-                {profile.display_name.slice(0, 1).toUpperCase()}
-              </span>
+              <Avatar name={profile.display_name} src={profile.avatar_url ?? ""} size="sm" />
             </button>
             {accountOpen ? (
               <AccountMenu
@@ -509,11 +544,11 @@ export default function Home() {
         ) : null}
 
         {activeTab === "gallery" ? (
-          <GalleryView openPhoto={openPhoto} photos={allPhotos} />
+          <GalleryView openPhoto={openPhoto} photos={homePhotos} />
         ) : null}
 
         {activeTab === "connections" ? (
-          <ConnectionsView openPhoto={openPhoto} photos={allPhotos} />
+          <ConnectionsView openPhoto={openPhoto} photos={connectionPhotos} />
         ) : null}
 
         {activeTab === "groups" ? (
@@ -635,7 +670,7 @@ function ConnectionsView({
         return (
           <section key={owner}>
             <div className="mb-3 flex items-center gap-3">
-              <Avatar name={ownerName} />
+              <Avatar name={ownerName} src={ownerPhotos[0]?.ownerAvatar} />
               <div>
                 <h2 className="font-semibold">{ownerName}</h2>
                 <p className="text-xs text-ink/55 dark:text-paper/55">
@@ -671,7 +706,7 @@ function GroupsView({
   setMessage: (value: string) => void;
 }) {
   const selectedGroupPhotos = activeGroup
-    ? photos.filter((photo) => photo.group.toLowerCase() === activeGroup.name.toLowerCase())
+    ? photos.filter((photo) => photo.groupId === activeGroup.id)
     : [];
 
   return (
@@ -689,8 +724,10 @@ function GroupsView({
         <GroupGallery
           group={activeGroup}
           openPhoto={openPhoto}
-          photos={selectedGroupPhotos.length ? selectedGroupPhotos : photos.slice(0, 6)}
+          photos={selectedGroupPhotos}
+          reload={reload}
           setActiveGroupId={setActiveGroupId}
+          setMessage={setMessage}
         />
       )}
     </section>
@@ -713,9 +750,7 @@ function ProfileView({
   return (
     <section className="flex flex-col gap-4">
       <div className="rounded-lg border border-white/70 bg-white/85 p-5 text-center shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
-        <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-skysoft text-2xl font-semibold text-ink">
-          {profile.display_name.slice(0, 1).toUpperCase()}
-        </div>
+        <Avatar name={profile.display_name} src={profile.avatar_url ?? ""} size="lg" className="mx-auto" />
         <h1 className="mt-3 text-2xl font-semibold">{profile.display_name}</h1>
         <p className="text-sm text-ink/55 dark:text-paper/55">@{profile.username}</p>
         <p className="mt-1 text-sm text-ink/55 dark:text-paper/55">{ownPhotos.length} photos</p>
@@ -977,13 +1012,13 @@ function PhotoViewer({
       <div className="rounded-t-2xl bg-white p-4 text-ink">
         <div className="mb-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Avatar name={photo.owner} />
+            <Avatar name={photo.owner} src={photo.ownerAvatar} />
             <div>
               <p className="font-semibold">{photo.owner}</p>
               <p className="text-sm text-ink/60">{photo.location}</p>
             </div>
           </div>
-          <button className="text-xl">+</button>
+          <span />
         </div>
         <p className="text-sm text-ink/60">{photoTime(photo)}</p>
         <p className="mt-3">{photo.caption}</p>
@@ -994,11 +1029,8 @@ function PhotoViewer({
             </span>
           ))}
         </div>
-        <div className="mt-5 flex justify-around border-t border-line pt-4">
-          <Send size={20} />
-          <Plus size={20} />
-          <Info size={20} />
-          <button aria-label="Delete photo" onClick={() => onDelete(photo)} type="button">
+        <div className="mt-5 flex justify-end border-t border-line pt-4">
+          <button aria-label="Delete photo" className="grid h-10 w-10 place-items-center" onClick={() => onDelete(photo)} type="button">
             <Trash2 size={20} />
           </button>
         </div>
@@ -1153,7 +1185,7 @@ function SharePhotoSheet({
           </button>
         </div>
 
-        <div className="mb-4 aspect-square w-28 overflow-hidden bg-paper dark:bg-[#1d1d1a]">
+        <div className="mb-4 aspect-square w-full overflow-hidden bg-paper dark:bg-[#1d1d1a]">
           <img alt="Captured preview" className={memoryPhotoClass} src={src} />
         </div>
 
@@ -1196,10 +1228,21 @@ function SharePhotoSheet({
   );
 }
 
-function Avatar({ name }: { name: string }) {
+function Avatar({
+  className,
+  name,
+  size = "md",
+  src
+}: {
+  className?: string;
+  name: string;
+  size?: "sm" | "md" | "lg";
+  src?: string;
+}) {
+  const sizeClass = size === "lg" ? "h-20 w-20 text-2xl" : size === "sm" ? "h-8 w-8 text-sm" : "h-10 w-10 text-sm";
   return (
-    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-skysoft text-sm font-semibold text-ink">
-      {name.slice(0, 1).toUpperCase()}
+    <div className={clsx("grid shrink-0 place-items-center overflow-hidden rounded-full bg-skysoft font-semibold text-ink", sizeClass, className)}>
+      {src ? <img alt="" className="h-full w-full object-cover grayscale contrast-125" src={src} /> : name.slice(0, 1).toUpperCase()}
     </div>
   );
 }
@@ -1371,9 +1414,7 @@ function ProfilePanel({ profile }: { profile: Profile }) {
   return (
     <section className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
       <div className="flex items-center gap-3">
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-skysoft text-lg font-semibold text-ink">
-          {profile.display_name.slice(0, 1).toUpperCase()}
-        </div>
+        <Avatar name={profile.display_name} src={profile.avatar_url ?? ""} />
         <div className="min-w-0">
           <h2 className="truncate font-semibold">{profile.display_name}</h2>
           <p className="truncate text-sm text-ink/60 dark:text-paper/60">@{profile.username}</p>
@@ -1403,7 +1444,55 @@ function AccountMenu({
   const [username, setUsername] = useState(profile.username);
   const [displayName, setDisplayName] = useState(profile.display_name);
   const [timezone, setTimezone] = useState(profile.preferred_timezone);
+  const [avatarUrl, setAvatarUrl] = useState(profile.avatar_url ?? "");
   const [busy, setBusy] = useState(false);
+
+  async function uploadAvatar(file: File | null) {
+    if (!supabase || !file) return;
+    if (!file.type.startsWith("image/")) {
+      setMessage("Choose an image file for your profile picture.");
+      return;
+    }
+
+    setBusy(true);
+    setMessage("");
+    let blob: Blob;
+    try {
+      blob = await imageFileToAvatarBlob(file);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not prepare profile picture.");
+      setBusy(false);
+      return;
+    }
+
+    const path = `${profile.id}/avatar-${crypto.randomUUID()}.jpg`;
+    const { error: uploadError } = await supabase.storage
+      .from("connection-avatars")
+      .upload(path, blob, {
+        contentType: "image/jpeg",
+        upsert: false
+      });
+
+    if (uploadError) {
+      setMessage(uploadError.message);
+      setBusy(false);
+      return;
+    }
+
+    const { data } = supabase.storage.from("connection-avatars").getPublicUrl(path);
+    const publicUrl = data.publicUrl;
+    const { error } = await supabase.from("profiles").update({ avatar_url: publicUrl }).eq("id", profile.id);
+
+    if (error) {
+      setMessage(error.message);
+    } else {
+      setAvatarUrl(publicUrl);
+      setMessage("Profile picture updated.");
+      reload();
+    }
+
+    setBusy(false);
+  }
 
   async function updateProfile(event: FormEvent) {
     event.preventDefault();
@@ -1416,7 +1505,8 @@ function AccountMenu({
       .update({
         username,
         display_name: displayName,
-        preferred_timezone: timezone
+        preferred_timezone: timezone,
+        avatar_url: avatarUrl || null
       })
       .eq("id", profile.id);
 
@@ -1433,10 +1523,13 @@ function AccountMenu({
   return (
     <div className="absolute right-0 top-12 z-20 w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-line bg-white p-4 text-left shadow-soft dark:border-white/15 dark:bg-[#242420]">
       <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar name={displayName} src={avatarUrl} />
+          <div className="min-w-0">
           <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-rust">Settings</p>
           <p className="text-sm font-semibold">{profile.display_name}</p>
           <p className="text-xs text-ink/55 dark:text-paper/55">@{profile.username}</p>
+          </div>
         </div>
         <button
           className="flex items-center gap-2 rounded-full border border-line px-3 py-1.5 text-xs dark:border-white/15"
@@ -1449,6 +1542,20 @@ function AccountMenu({
       </div>
 
       <form className="grid gap-3" onSubmit={updateProfile}>
+        <label className="flex cursor-pointer items-center justify-between rounded-md border border-line px-3 py-3 text-sm dark:border-white/15">
+          <span className="flex items-center gap-2">
+            <Camera size={16} />
+            Profile picture
+          </span>
+          <input
+            accept="image/*"
+            className="hidden"
+            disabled={busy}
+            onChange={(event) => void uploadAvatar(event.target.files?.[0] ?? null)}
+            type="file"
+          />
+          <span className="text-xs text-ink/55 dark:text-paper/55">Upload</span>
+        </label>
         <Field label="Username" value={username} onChange={setUsername} required />
         <Field label="Display name" value={displayName} onChange={setDisplayName} required />
         <SelectField label="Timezone" value={timezone} onChange={setTimezone} />
@@ -1488,6 +1595,7 @@ function GroupPanel({
   setMessage: (value: string) => void;
 }) {
   const [name, setName] = useState("");
+  const [inviteGroupId, setInviteGroupId] = useState<string | null>(null);
 
   async function createGroup(event: FormEvent) {
     event.preventDefault();
@@ -1526,23 +1634,37 @@ function GroupPanel({
           const groupPhotos = photos.filter((photo) => photo.groupId === group.id);
           const latestPhoto = groupPhotos[0] ?? null;
           return (
-            <button
-              key={group.id}
-              className="grid grid-cols-[4rem_minmax(0,1fr)_1rem] items-center gap-4 text-left"
-              onClick={() => setActiveGroupId(group.id)}
-            >
-              <GroupThumb groupId={group.id} photos={photos} />
-              <span className="min-w-0">
-                <span className="block truncate text-lg font-semibold capitalize">{group.name}</span>
-                <span className="block truncate text-sm text-ink/55 dark:text-paper/55">
-                  {latestPhoto ? `${latestPhoto.owner} • ${photoTime(latestPhoto)}` : "No photos yet"}
+            <div key={group.id} className="grid grid-cols-[4rem_minmax(0,1fr)_2.5rem] items-center gap-4">
+              <button
+                className="contents text-left"
+                onClick={() => setActiveGroupId(group.id)}
+                type="button"
+              >
+                <GroupThumb groupId={group.id} photos={photos} />
+                <span className="min-w-0">
+                  <span className="block truncate text-lg font-semibold capitalize">{group.name}</span>
+                  <span className="block truncate text-sm text-ink/55 dark:text-paper/55">
+                    {latestPhoto ? `${latestPhoto.owner} • ${photoTime(latestPhoto)}` : "No photos yet"}
+                  </span>
+                  <span className="block text-sm text-ink/55 dark:text-paper/55">
+                    {group.member_count} {group.member_count === 1 ? "member" : "members"}
+                  </span>
                 </span>
-                <span className="block text-sm text-ink/55 dark:text-paper/55">
-                  {group.member_count} {group.member_count === 1 ? "member" : "members"}
-                </span>
-              </span>
-              <span className={clsx("h-2.5 w-2.5 rounded-full", activeGroupId === group.id ? "bg-[#1f73ff]" : "bg-[#1f73ff]")} />
-            </button>
+              </button>
+              <button
+                aria-label={`Invite to ${group.name}`}
+                className="grid h-10 w-10 place-items-center rounded-full border border-line bg-white/75 dark:border-white/15 dark:bg-[#1d1d1a]"
+                onClick={() => setInviteGroupId((current) => (current === group.id ? null : group.id))}
+                type="button"
+              >
+                <UserPlus size={18} />
+              </button>
+              {inviteGroupId === group.id ? (
+                <div className="col-span-3">
+                  <MemberPanel group={group} reload={reload} setMessage={setMessage} />
+                </div>
+              ) : null}
+            </div>
           );
         })}
       </div>
@@ -1575,14 +1697,19 @@ function GroupGallery({
   group,
   openPhoto,
   photos,
+  reload,
+  setMessage,
   setActiveGroupId
 }: {
   group: Group;
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
+  reload: () => void;
+  setMessage: (value: string) => void;
   setActiveGroupId: (id: string | null) => void;
 }) {
   const owners = [...new Set(photos.map((photo) => photo.ownerId))];
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   return (
     <section className="flex flex-col gap-7">
@@ -1596,26 +1723,37 @@ function GroupGallery({
             {group.member_count} {group.member_count === 1 ? "member" : "members"}
           </p>
         </div>
-        <button aria-label="Group settings" className="grid h-10 w-10 place-items-center">
-          ...
+        <button
+          aria-label={`Invite to ${group.name}`}
+          className="grid h-10 w-10 place-items-center"
+          onClick={() => setInviteOpen((value) => !value)}
+          type="button"
+        >
+          <UserPlus size={20} />
         </button>
       </div>
 
-      {owners.map((owner) => {
-        const ownerPhotos = photos.filter((photo) => photo.ownerId === owner);
-        const ownerName = ownerPhotos[0]?.owner ?? "Someone";
-        return (
-          <section key={owner}>
-            <div className="mb-3 flex items-center gap-3">
-              <Avatar name={ownerName} />
-              <p className="text-sm text-ink/55 dark:text-paper/55">
-                <span className="font-medium text-ink dark:text-paper">{ownerName}</span> {photoTime(ownerPhotos[0])}
-              </p>
-            </div>
-            <PhotoGrid openPhoto={openPhoto} photos={ownerPhotos} sourcePhotos={photos} />
-          </section>
-        );
-      })}
+      {inviteOpen ? <MemberPanel group={group} reload={reload} setMessage={setMessage} /> : null}
+
+      {photos.length ? (
+        owners.map((owner) => {
+          const ownerPhotos = photos.filter((photo) => photo.ownerId === owner);
+          const ownerName = ownerPhotos[0]?.owner ?? "Someone";
+          return (
+            <section key={owner}>
+              <div className="mb-3 flex items-center gap-3">
+                <Avatar name={ownerName} src={ownerPhotos[0]?.ownerAvatar} />
+                <p className="text-sm text-ink/55 dark:text-paper/55">
+                  <span className="font-medium text-ink dark:text-paper">{ownerName}</span> {photoTime(ownerPhotos[0])}
+                </p>
+              </div>
+              <PhotoGrid openPhoto={openPhoto} photos={ownerPhotos} sourcePhotos={photos} />
+            </section>
+          );
+        })
+      ) : (
+        <EmptyPanel title="No group photos yet" body="Photos appear here only when they are shared to this group." />
+      )}
     </section>
   );
 }

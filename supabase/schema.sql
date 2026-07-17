@@ -5,8 +5,12 @@ create table if not exists public.profiles (
   username text unique not null check (username ~ '^[a-zA-Z0-9_]{3,24}$'),
   display_name text not null,
   preferred_timezone text not null,
+  avatar_url text,
   created_at timestamptz not null default now()
 );
+
+alter table public.profiles
+  add column if not exists avatar_url text;
 
 create table if not exists public.groups (
   id uuid primary key default gen_random_uuid(),
@@ -88,6 +92,13 @@ create index if not exists photos_taken_at_idx on public.photos(taken_at desc);
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('connection-photos', 'connection-photos', false, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update
+set public = excluded.public,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('connection-avatars', 'connection-avatars', true, 1048576, array['image/jpeg', 'image/png', 'image/webp'])
 on conflict (id) do update
 set public = excluded.public,
     file_size_limit = excluded.file_size_limit,
@@ -194,6 +205,10 @@ drop policy if exists "Photo objects can be read by visible members" on storage.
 drop policy if exists "Users can upload their own photo objects" on storage.objects;
 drop policy if exists "Users can update their own photo objects" on storage.objects;
 drop policy if exists "Users can delete their own photo objects" on storage.objects;
+drop policy if exists "Avatar objects are public" on storage.objects;
+drop policy if exists "Users can upload their own avatar objects" on storage.objects;
+drop policy if exists "Users can update their own avatar objects" on storage.objects;
+drop policy if exists "Users can delete their own avatar objects" on storage.objects;
 
 create policy "Profiles are visible to signed in users"
   on public.profiles for select
@@ -395,5 +410,33 @@ create policy "Users can delete their own photo objects"
   to authenticated
   using (
     bucket_id = 'connection-photos'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "Avatar objects are public"
+  on storage.objects for select
+  using (bucket_id = 'connection-avatars');
+
+create policy "Users can upload their own avatar objects"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'connection-avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "Users can update their own avatar objects"
+  on storage.objects for update
+  to authenticated
+  using (
+    bucket_id = 'connection-avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "Users can delete their own avatar objects"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'connection-avatars'
     and (storage.foldername(name))[1] = auth.uid()::text
   );

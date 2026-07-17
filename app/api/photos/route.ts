@@ -15,7 +15,7 @@ type PhotoRow = {
   taken_at: string;
   tags: string[];
   created_at: string;
-  profiles: { username: string; display_name: string } | null;
+  profiles: { username: string; display_name: string; avatar_url: string | null } | null;
   groups: { id: string; name: string } | null;
 };
 
@@ -24,6 +24,7 @@ function photoPayload(row: PhotoRow, signedUrl: string) {
     id: row.id,
     ownerId: row.owner_id,
     owner: row.profiles?.display_name ?? row.profiles?.username ?? "Someone",
+    ownerAvatar: row.profiles?.avatar_url ?? "",
     groupId: row.group_id,
     group: row.groups?.name ?? "Ungrouped",
     shareScope: row.share_scope,
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from("photos")
-    .select("*, profiles!photos_owner_id_fkey(username, display_name), groups(id, name)")
+    .select("*, profiles!photos_owner_id_fkey(username, display_name, avatar_url), groups(id, name)")
     .order("taken_at", { ascending: false })
     .order("created_at", { ascending: false });
 
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest) {
       taken_at: takenAt,
       tags
     })
-    .select("*, profiles!photos_owner_id_fkey(username, display_name), groups(id, name)")
+    .select("*, profiles!photos_owner_id_fkey(username, display_name, avatar_url), groups(id, name)")
     .single();
 
   if (error) {
