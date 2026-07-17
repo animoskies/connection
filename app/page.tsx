@@ -142,6 +142,24 @@ function dataUrlToBlob(dataUrl: string) {
   return new Blob([array], { type: mime });
 }
 
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const input = document.createElement("textarea");
+    input.value = text;
+    input.setAttribute("readonly", "");
+    input.style.position = "fixed";
+    input.style.left = "-9999px";
+    document.body.appendChild(input);
+    input.select();
+    const copied = document.execCommand("copy");
+    document.body.removeChild(input);
+    return copied;
+  }
+}
+
 function imageFileToPhotoDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const image = new Image();
@@ -1750,6 +1768,7 @@ function MemberPanel({
   const [invite, setInvite] = useState("");
   const [role, setRole] = useState<"editor" | "viewer">("viewer");
   const [busyLink, setBusyLink] = useState(false);
+  const [inviteLink, setInviteLink] = useState("");
 
   async function inviteMember(event: FormEvent) {
     event.preventDefault();
@@ -1809,9 +1828,10 @@ function MemberPanel({
       return;
     }
 
-    const inviteUrl = `${window.location.origin}${window.location.pathname}?invite=${token}`;
-    await navigator.clipboard.writeText(inviteUrl);
-    setMessage("Invite link copied.");
+    const inviteUrl = `${window.location.origin}/?invite=${token}`;
+    setInviteLink(inviteUrl);
+    const copied = await copyText(inviteUrl);
+    setMessage(copied ? "Invite link copied." : "Invite link created. Tap the link to copy it manually.");
     setBusyLink(false);
   }
 
@@ -1857,6 +1877,23 @@ function MemberPanel({
         <Copy size={15} />
         Copy invite link
       </button>
+      {inviteLink ? (
+        <div className="mt-3 grid gap-2">
+          <input
+            className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-xs text-ink outline-none dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+            readOnly
+            value={inviteLink}
+            onFocus={(event) => event.target.select()}
+          />
+          <button
+            className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-paper dark:bg-paper dark:text-ink"
+            onClick={() => void copyText(inviteLink).then((copied) => setMessage(copied ? "Invite link copied." : "Select and copy the link manually."))}
+            type="button"
+          >
+            Copy shown link
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }
