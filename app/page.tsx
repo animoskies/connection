@@ -1256,10 +1256,21 @@ function AuthScreen({ message, setMessage }: { message: string; setMessage: (val
     if (!supabase) return;
     setBusy(true);
     setMessage("");
+    const pendingInvite = localStorage.getItem("connection-pending-invite");
+    const emailRedirectTo =
+      mode === "signup"
+        ? `${window.location.origin}/${pendingInvite ? `?invite=${encodeURIComponent(pendingInvite)}` : ""}`
+        : undefined;
 
     const { data, error } =
       mode === "signup"
-        ? await supabase.auth.signUp({ email, password })
+        ? await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              emailRedirectTo
+            }
+          })
         : await supabase.auth.signInWithPassword({ email, password });
 
     if (error) setMessage(error.message);
