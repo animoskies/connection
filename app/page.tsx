@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   CalendarDays,
@@ -77,9 +77,9 @@ type PhotoItem = {
 };
 
 const supabase = hasSupabaseConfig ? createSupabaseClient() : null;
-const memoryPhotoClass = "h-full w-full object-cover grayscale contrast-125 brightness-90";
-const retroPhotoSize = 640;
-const retroPhotoQuality = 0.56;
+const memoryPhotoClass = "h-full w-full object-cover";
+const nativePhotoMaxSize = 1280;
+const nativePhotoQuality = 0.72;
 const avatarPhotoSize = 320;
 type OpenPhoto = (id: string, photos: PhotoItem[]) => void;
 type ShareTarget =
@@ -140,6 +140,34 @@ function dataUrlToBlob(dataUrl: string) {
   return new Blob([array], { type: mime });
 }
 
+function imageFileToPhotoDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, nativePhotoMaxSize / Math.max(image.naturalWidth, image.naturalHeight));
+      const width = Math.max(1, Math.round(image.naturalWidth * scale));
+      const height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        reject(new Error("Could not prepare photo."));
+        return;
+      }
+      context.drawImage(image, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", nativePhotoQuality));
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not read that photo."));
+    };
+    image.src = url;
+  });
+}
+
 function imageFileToAvatarBlob(file: File) {
   return new Promise<Blob>((resolve, reject) => {
     const image = new Image();
@@ -182,7 +210,6 @@ export default function Home() {
   const [calendarGroupId, setCalendarGroupId] = useState("all");
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [viewerPhotoIds, setViewerPhotoIds] = useState<string[]>([]);
-  const [cameraOpen, setCameraOpen] = useState(false);
   const [pendingCaptureSrc, setPendingCaptureSrc] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [view, setView] = useState<ViewMode>("agenda");
@@ -375,6 +402,22 @@ export default function Home() {
     setSelectedPhotoId(id);
   }
 
+  async function handleNativePhoto(file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setMessage("Choose a photo from your camera or library.");
+      return;
+    }
+
+    setMessage("");
+    try {
+      const src = await imageFileToPhotoDataUrl(file);
+      setPendingCaptureSrc(src);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not prepare photo.");
+    }
+  }
+
   async function uploadCapturedPhoto(src: string, target: ShareTarget) {
     if (!supabase || !profile) return;
 
@@ -417,7 +460,7 @@ export default function Home() {
       },
       body: JSON.stringify({
         title: "Untitled memory",
-        caption: "Captured in black and white.",
+        caption: "",
         location: "",
         groupId,
         shareScope: target.type === "group" ? "group" : "connections",
@@ -510,14 +553,22 @@ export default function Home() {
             Connection
           </div>
           <div className="relative flex items-center gap-2">
-            <button
+            <label
               aria-label="Open camera"
-              className="grid h-11 w-11 place-items-center bg-ink text-paper dark:bg-paper dark:text-ink"
-              onClick={() => setCameraOpen(true)}
-              type="button"
+              className="grid h-11 w-11 cursor-pointer place-items-center bg-ink text-paper dark:bg-paper dark:text-ink"
             >
               <Camera size={18} />
-            </button>
+              <input
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(event) => {
+                  void handleNativePhoto(event.target.files?.[0] ?? null);
+                  event.target.value = "";
+                }}
+                type="file"
+              />
+            </label>
             <button
               aria-label="Account settings"
               className="grid h-11 w-11 place-items-center rounded-full border border-line bg-white/90 text-ink shadow-sm dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
@@ -596,15 +647,6 @@ export default function Home() {
           photo={selectedPhoto}
           photos={viewerPhotos.length ? viewerPhotos : allPhotos}
           setSelectedPhotoId={setSelectedPhotoId}
-        />
-      ) : null}
-      {cameraOpen ? (
-        <RetroCamera
-          onClose={() => setCameraOpen(false)}
-          onCapture={(src) => {
-            setPendingCaptureSrc(src);
-            setCameraOpen(false);
-          }}
         />
       ) : null}
       {pendingCaptureSrc ? (
@@ -1039,126 +1081,6 @@ function PhotoViewer({
   );
 }
 
-function RetroCamera({
-  onCapture,
-  onClose
-}: {
-  onCapture: (src: string) => void;
-  onClose: () => void;
-}) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const [error, setError] = useState("");
-  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
-
-  useEffect(() => {
-    let mounted = true;
-
-    async function openCamera() {
-      try {
-        setError("");
-        streamRef.current?.getTracks().forEach((track) => track.stop());
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: {
-            facingMode: { ideal: facingMode },
-            width: { ideal: 960 },
-            height: { ideal: 960 }
-          }
-        });
-        if (!mounted) {
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-      } catch {
-        setError("Camera access is blocked or unavailable.");
-      }
-    }
-
-    void openCamera();
-
-    return () => {
-      mounted = false;
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-    };
-  }, [facingMode]);
-
-  function capture() {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas) return;
-
-    const size = Math.min(video.videoWidth || retroPhotoSize, video.videoHeight || retroPhotoSize);
-    const sourceX = Math.max(0, ((video.videoWidth || size) - size) / 2);
-    const sourceY = Math.max(0, ((video.videoHeight || size) - size) / 2);
-    canvas.width = retroPhotoSize;
-    canvas.height = retroPhotoSize;
-
-    const context = canvas.getContext("2d");
-    if (!context) return;
-
-    context.filter = "grayscale(1) contrast(1.35) brightness(0.92)";
-    context.drawImage(video, sourceX, sourceY, size, size, 0, 0, retroPhotoSize, retroPhotoSize);
-    onCapture(canvas.toDataURL("image/jpeg", retroPhotoQuality));
-  }
-
-  function switchCamera() {
-    setFacingMode((mode) => (mode === "environment" ? "user" : "environment"));
-  }
-
-  return (
-    <div className="fixed inset-0 z-40 flex flex-col bg-black text-white">
-      <div className="flex items-center justify-between px-4 py-4 text-sm">
-        <button onClick={onClose}>Cancel</button>
-        <p className="font-medium tracking-[0.18em]">RETRO</p>
-        <button aria-label="Switch camera" className="grid h-10 w-10 place-items-center" onClick={switchCamera} type="button">
-          <RefreshCw size={18} />
-        </button>
-      </div>
-
-      <div className="grid flex-1 place-items-center px-4">
-        <div className="relative aspect-square w-full max-w-md overflow-hidden bg-neutral-950">
-          {error ? (
-            <div className="grid h-full place-items-center px-6 text-center text-sm text-white/70">{error}</div>
-          ) : (
-            <video
-              ref={videoRef}
-              className={clsx(
-                "h-full w-full object-cover grayscale contrast-125",
-                facingMode === "user" && "scale-x-[-1]"
-              )}
-              muted
-              playsInline
-            />
-          )}
-          <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.08)_1px,transparent_1px)] bg-[length:100%_4px] mix-blend-overlay" />
-          <div className="pointer-events-none absolute inset-0 border border-white/25" />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 items-center px-8 pb-8">
-        <span />
-        <button
-          aria-label="Take photo"
-          className="mx-auto h-20 w-20 rounded-full border-4 border-white bg-white/10 p-1"
-          onClick={capture}
-          type="button"
-        >
-          <span className="block h-full w-full rounded-full bg-white" />
-        </button>
-        <p className="text-right text-xs uppercase tracking-[0.16em] text-white/55">{retroPhotoSize}px</p>
-      </div>
-      <canvas ref={canvasRef} className="hidden" />
-    </div>
-  );
-}
-
 function SharePhotoSheet({
   groups,
   photoUploading,
@@ -1242,7 +1164,7 @@ function Avatar({
   const sizeClass = size === "lg" ? "h-20 w-20 text-2xl" : size === "sm" ? "h-8 w-8 text-sm" : "h-10 w-10 text-sm";
   return (
     <div className={clsx("grid shrink-0 place-items-center overflow-hidden rounded-full bg-skysoft font-semibold text-ink", sizeClass, className)}>
-      {src ? <img alt="" className="h-full w-full object-cover grayscale contrast-125" src={src} /> : name.slice(0, 1).toUpperCase()}
+      {src ? <img alt="" className="h-full w-full object-cover" src={src} /> : name.slice(0, 1).toUpperCase()}
     </div>
   );
 }
@@ -1336,7 +1258,7 @@ function AuthVisual() {
             {Array.from({ length: 6 }, (_, index) => (
               <div
                 key={index}
-                className="aspect-square bg-[radial-gradient(circle_at_35%_35%,#f8f7f4_0,#c7c3ba_32%,#2b2b29_100%)] grayscale"
+                className="aspect-square bg-[radial-gradient(circle_at_35%_35%,#f8f7f4_0,#c7c3ba_32%,#2b2b29_100%)]"
               />
             ))}
           </div>
@@ -2226,7 +2148,7 @@ function BridgePreview() {
           {Array.from({ length: 9 }, (_, index) => (
             <div
               key={index}
-              className="aspect-square bg-[radial-gradient(circle_at_35%_35%,#f8f7f4_0,#c7c3ba_32%,#2b2b29_100%)] grayscale dark:bg-[#1d1d1a]"
+              className="aspect-square bg-[radial-gradient(circle_at_35%_35%,#f8f7f4_0,#c7c3ba_32%,#2b2b29_100%)] dark:bg-[#1d1d1a]"
             />
           ))}
         </div>
