@@ -542,6 +542,7 @@ export default function Home() {
 
   const activeGroup = groups.find((group) => group.id === activeGroupId) ?? null;
   const allPhotos = photos;
+  const myPhotos = profile ? photos.filter((photo) => photo.ownerId === profile.id) : [];
   const homePhotos = photos.filter((photo) => photo.groupId === null);
   const connectionPhotos = homePhotos.filter((photo) => photo.shareScope === "connections");
   const selectedPhoto = allPhotos.find((photo) => photo.id === selectedPhotoId) ?? null;
@@ -629,7 +630,7 @@ export default function Home() {
         ) : null}
 
         {activeTab === "gallery" ? (
-          <GalleryView openPhoto={openPhoto} photos={homePhotos} />
+          <GalleryView openPhoto={openPhoto} photos={myPhotos} />
         ) : null}
 
         {activeTab === "connections" ? (
@@ -706,7 +707,7 @@ function GalleryView({
   const sections = groupPhotosByDate(photos);
 
   if (!photos.length) {
-    return <EmptyPanel title="No photos yet" body="Use the camera to capture your first black-and-white memory." />;
+    return <EmptyPanel title="No photos yet" body="Use the camera to capture your first memory." />;
   }
 
   return (
