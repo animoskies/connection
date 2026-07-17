@@ -994,16 +994,19 @@ function RetroCamera({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState("");
+  const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
 
   useEffect(() => {
     let mounted = true;
 
     async function openCamera() {
       try {
+        setError("");
+        streamRef.current?.getTracks().forEach((track) => track.stop());
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
-            facingMode: "environment",
+            facingMode: { ideal: facingMode },
             width: { ideal: 640 },
             height: { ideal: 640 }
           }
@@ -1028,7 +1031,7 @@ function RetroCamera({
       mounted = false;
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
-  }, []);
+  }, [facingMode]);
 
   function capture() {
     const video = videoRef.current;
@@ -1049,12 +1052,18 @@ function RetroCamera({
     onCapture(canvas.toDataURL("image/jpeg", 0.42));
   }
 
+  function switchCamera() {
+    setFacingMode((mode) => (mode === "environment" ? "user" : "environment"));
+  }
+
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-black text-white">
       <div className="flex items-center justify-between px-4 py-4 text-sm">
         <button onClick={onClose}>Cancel</button>
         <p className="font-medium tracking-[0.18em]">RETRO</p>
-        <span className="w-12" />
+        <button aria-label="Switch camera" className="grid h-10 w-10 place-items-center" onClick={switchCamera} type="button">
+          <RefreshCw size={18} />
+        </button>
       </div>
 
       <div className="grid flex-1 place-items-center px-4">
@@ -1064,7 +1073,10 @@ function RetroCamera({
           ) : (
             <video
               ref={videoRef}
-              className="h-full w-full scale-x-[-1] object-cover grayscale contrast-125"
+              className={clsx(
+                "h-full w-full object-cover grayscale contrast-125",
+                facingMode === "user" && "scale-x-[-1]"
+              )}
               muted
               playsInline
             />
