@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
+  Bell,
   CalendarDays,
   Camera,
   Check,
@@ -76,6 +77,24 @@ type PhotoItem = {
   takenAt: string;
   createdAt: string;
   tags: string[];
+};
+
+type GroupInvite = {
+  id: string;
+  token: string;
+  groupId: string;
+  groupName: string;
+  role: "owner" | "editor" | "viewer";
+  inviterName: string;
+  createdAt: string;
+};
+
+type InvitePreview = {
+  token: string;
+  groupId: string;
+  groupName: string;
+  role: "owner" | "editor" | "viewer";
+  inviterName: string;
 };
 
 const supabase = hasSupabaseConfig ? createSupabaseClient() : null;
@@ -223,6 +242,7 @@ export default function Home() {
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
+  const [groupInvites, setGroupInvites] = useState<GroupInvite[]>([]);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
@@ -238,6 +258,8 @@ export default function Home() {
   const [message, setMessage] = useState("");
   const [darkMode, setDarkMode] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [pendingInvite, setPendingInvite] = useState<InvitePreview | null>(null);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
@@ -299,6 +321,7 @@ export default function Home() {
     if (!sessionUserId) {
       setProfile(null);
       setGroups([]);
+      setGroupInvites([]);
       setEvents([]);
       setPhotos([]);
       return;
@@ -309,7 +332,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!sessionUserId || !profile) return;
-    void acceptPendingInvite();
+    void preparePendingInvitePrompt();
   }, [sessionUserId, profile]);
 
   async function loadWorkspace(userId = sessionUserId) {
@@ -400,17 +423,50 @@ export default function Home() {
     }
 
     await loadPhotos();
+    await loadGroupInvites(userId);
 
     setLoading(false);
   }
 
-  async function acceptPendingInvite() {
+  async function loadGroupInvites(userId = sessionUserId) {
+    if (!supabase || !userId) return;
+
+    const { data, error } = await supabase
+      .from("group_invites")
+      .select("id, group_id, token, role, created_at, groups(id, name), profiles!group_invites_created_by_fkey(display_name, username)")
+      .eq("invitee_id", userId)
+      .is("accepted_at", null)
+      .is("declined_at", null)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setGroupInvites(
+      (data ?? []).map((invite) => {
+        const group = Array.isArray(invite.groups) ? invite.groups[0] : invite.groups;
+        const inviter = Array.isArray(invite.profiles) ? invite.profiles[0] : invite.profiles;
+        return {
+          id: invite.id,
+          token: invite.token,
+          groupId: invite.group_id,
+          groupName: group?.name ?? "Group",
+          role: invite.role,
+          inviterName: inviter?.display_name ?? inviter?.username ?? "Someone",
+          createdAt: invite.created_at
+        } as GroupInvite;
+      })
+    );
+  }
+
+  async function preparePendingInvitePrompt() {
     if (!supabase) return;
     const inviteToken = localStorage.getItem("connection-pending-invite");
-    if (!inviteToken || sessionStorage.getItem(`connection-invite-${inviteToken}`)) return;
+    if (!inviteToken || pendingInvite?.token === inviteToken) return;
 
-    sessionStorage.setItem(`connection-invite-${inviteToken}`, "true");
-    const { data, error } = await supabase.rpc("accept_group_invite", {
+    const { data, error } = await supabase.rpc("group_invite_details", {
       invite_token: inviteToken
     });
 
@@ -419,9 +475,57 @@ export default function Home() {
       return;
     }
 
+    const invite = Array.isArray(data) ? data[0] : null;
+    if (!invite) {
+      localStorage.removeItem("connection-pending-invite");
+      setMessage("That invite link is no longer available.");
+      return;
+    }
+
+    setPendingInvite({
+      token: inviteToken,
+      groupId: invite.group_id,
+      groupName: invite.group_name,
+      role: invite.role,
+      inviterName: invite.inviter_name ?? "Someone"
+    });
+  }
+
+  async function acceptInvite(token: string) {
+    if (!supabase) return;
+    setMessage("");
+    const { data, error } = await supabase.rpc("accept_group_invite", {
+      invite_token: token
+    });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
     localStorage.removeItem("connection-pending-invite");
+    setPendingInvite(null);
+    setNotificationsOpen(false);
     setMessage(`Joined ${data?.name ?? "group"}.`);
     await loadWorkspace();
+  }
+
+  async function declineInvite(token: string) {
+    if (!supabase) return;
+    setMessage("");
+    const { error } = await supabase.rpc("decline_group_invite", {
+      invite_token: token
+    });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    localStorage.removeItem("connection-pending-invite");
+    setPendingInvite(null);
+    setGroupInvites((current) => current.filter((invite) => invite.token !== token));
+    setMessage("Invite declined.");
   }
 
   async function authHeaders() {
@@ -606,6 +710,24 @@ export default function Home() {
             Connection
           </div>
           <div className="relative flex items-center gap-2">
+            <button
+              aria-label="Notifications"
+              className="relative grid h-11 w-11 place-items-center rounded-full border border-line bg-white/90 text-ink shadow-sm dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+              onClick={() => setNotificationsOpen((value) => !value)}
+              type="button"
+            >
+              <Bell size={18} />
+              {groupInvites.length ? (
+                <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-rust" />
+              ) : null}
+            </button>
+            {notificationsOpen ? (
+              <NotificationCenter
+                invites={groupInvites}
+                onAccept={(token) => void acceptInvite(token)}
+                onDecline={(token) => void declineInvite(token)}
+              />
+            ) : null}
             <label
               aria-label="Open camera"
               className="grid h-11 w-11 cursor-pointer place-items-center bg-ink text-paper dark:bg-paper dark:text-ink"
@@ -709,6 +831,13 @@ export default function Home() {
           src={pendingCaptureSrc}
           onCancel={() => setPendingCaptureSrc(null)}
           onShare={(target) => void uploadCapturedPhoto(pendingCaptureSrc, target)}
+        />
+      ) : null}
+      {pendingInvite ? (
+        <InvitePrompt
+          invite={pendingInvite}
+          onAccept={() => void acceptInvite(pendingInvite.token)}
+          onDecline={() => void declineInvite(pendingInvite.token)}
         />
       ) : null}
     </main>
@@ -1221,6 +1350,95 @@ function SharePhotoSheet({
         </div>
 
         {photoUploading ? <p className="mt-3 text-sm text-ink/55 dark:text-paper/55">Saving photo...</p> : null}
+      </section>
+    </div>
+  );
+}
+
+function NotificationCenter({
+  invites,
+  onAccept,
+  onDecline
+}: {
+  invites: GroupInvite[];
+  onAccept: (token: string) => void;
+  onDecline: (token: string) => void;
+}) {
+  return (
+    <section className="absolute right-0 top-12 z-20 w-[min(23rem,calc(100vw-2rem))] rounded-lg border border-line bg-white p-4 text-left shadow-soft dark:border-white/15 dark:bg-[#242420]">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="font-semibold">Notifications</h2>
+        {invites.length ? <span className="text-xs text-ink/55 dark:text-paper/55">{invites.length} pending</span> : null}
+      </div>
+      {invites.length ? (
+        <div className="grid gap-3">
+          {invites.map((invite) => (
+            <article key={invite.id} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
+              <p className="text-sm font-semibold">{invite.groupName}</p>
+              <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">
+                {invite.inviterName} invited you as {invite.role}.
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  className="rounded-full bg-ink px-3 py-2 text-sm font-medium text-paper dark:bg-paper dark:text-ink"
+                  onClick={() => onAccept(invite.token)}
+                  type="button"
+                >
+                  Accept
+                </button>
+                <button
+                  className="rounded-full border border-line px-3 py-2 text-sm font-medium dark:border-white/15"
+                  onClick={() => onDecline(invite.token)}
+                  type="button"
+                >
+                  Decline
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-ink/60 dark:text-paper/60">No pending invites.</p>
+      )}
+    </section>
+  );
+}
+
+function InvitePrompt({
+  invite,
+  onAccept,
+  onDecline
+}: {
+  invite: InvitePreview;
+  onAccept: () => void;
+  onDecline: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 px-4 text-ink">
+      <section className="w-full max-w-sm rounded-lg bg-white p-5 shadow-soft dark:bg-[#242420] dark:text-paper">
+        <div className="mb-4 grid h-11 w-11 place-items-center rounded-full bg-skysoft text-ink">
+          <UserPlus size={19} />
+        </div>
+        <h2 className="text-xl font-semibold">Join {invite.groupName}?</h2>
+        <p className="mt-2 text-sm leading-6 text-ink/65 dark:text-paper/65">
+          {invite.inviterName} invited you to this group. If you accept, shared photos and calendar events for this group will appear in your app.
+        </p>
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          <button
+            className="rounded-full bg-ink px-4 py-3 text-sm font-medium text-paper dark:bg-paper dark:text-ink"
+            onClick={onAccept}
+            type="button"
+          >
+            Join group
+          </button>
+          <button
+            className="rounded-full border border-line px-4 py-3 text-sm font-medium dark:border-white/15"
+            onClick={onDecline}
+            type="button"
+          >
+            Not now
+          </button>
+        </div>
       </section>
     </div>
   );
@@ -1797,9 +2015,25 @@ function MemberPanel({
       return;
     }
 
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setMessage("Authentication required.");
+      return;
+    }
+
+    const token = crypto.randomUUID().replaceAll("-", "");
     const { error } = await supabase
-      .from("group_members")
-      .upsert({ group_id: group.id, user_id: profile.id, role });
+      .from("group_invites")
+      .insert({
+        group_id: group.id,
+        token,
+        role,
+        created_by: user.id,
+        invitee_id: profile.id
+      });
 
     if (error) {
       setMessage(error.message);
@@ -1807,7 +2041,7 @@ function MemberPanel({
     }
 
     setInvite("");
-    reload();
+    setMessage(`Invite sent to @${invite.trim()}.`);
   }
 
   async function copyInviteLink() {

@@ -54,11 +54,20 @@ create table if not exists public.group_invites (
   token text not null unique,
   role public.group_role not null default 'viewer',
   created_by uuid not null references public.profiles(id) on delete cascade,
+  invitee_id uuid references public.profiles(id) on delete cascade,
+  accepted_at timestamptz,
+  declined_at timestamptz,
   created_at timestamptz not null default now()
 );
 
+alter table public.group_invites
+  add column if not exists invitee_id uuid references public.profiles(id) on delete cascade,
+  add column if not exists accepted_at timestamptz,
+  add column if not exists declined_at timestamptz;
+
 create index if not exists group_invites_token_idx on public.group_invites(token);
 create index if not exists group_invites_group_id_idx on public.group_invites(group_id);
+create index if not exists group_invites_invitee_id_idx on public.group_invites(invitee_id);
 
 create table if not exists public.connections (
   requester_id uuid not null references public.profiles(id) on delete cascade,
@@ -207,9 +216,25 @@ begin
     raise exception 'Invite link is invalid or expired';
   end if;
 
+  if invite.accepted_at is not null then
+    raise exception 'Invite has already been accepted';
+  end if;
+
+  if invite.declined_at is not null then
+    raise exception 'Invite has already been declined';
+  end if;
+
+  if invite.invitee_id is not null and invite.invitee_id <> auth.uid() then
+    raise exception 'This invite belongs to another account';
+  end if;
+
   insert into public.group_members (group_id, user_id, role)
   values (invite.group_id, auth.uid(), invite.role)
   on conflict (group_id, user_id) do nothing;
+
+  update public.group_invites
+  set accepted_at = now()
+  where id = invite.id;
 
   select * into joined_group
   from public.groups
@@ -217,6 +242,65 @@ begin
 
   return joined_group;
 end;
+$$;
+
+create or replace function public.decline_group_invite(invite_token text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  invite public.group_invites;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  select * into invite
+  from public.group_invites
+  where token = invite_token
+  limit 1;
+
+  if invite.id is null then
+    raise exception 'Invite link is invalid or expired';
+  end if;
+
+  if invite.invitee_id is not null and invite.invitee_id <> auth.uid() then
+    raise exception 'This invite belongs to another account';
+  end if;
+
+  update public.group_invites
+  set declined_at = now()
+  where id = invite.id;
+end;
+$$;
+
+create or replace function public.group_invite_details(invite_token text)
+returns table (
+  group_id uuid,
+  group_name text,
+  role public.group_role,
+  inviter_name text
+)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    g.id,
+    g.name,
+    gi.role,
+    coalesce(p.display_name, p.username)
+  from public.group_invites gi
+  join public.groups g on g.id = gi.group_id
+  join public.profiles p on p.id = gi.created_by
+  where gi.token = invite_token
+    and gi.accepted_at is null
+    and gi.declined_at is null
+    and (gi.invitee_id is null or gi.invitee_id = auth.uid())
+  limit 1;
 $$;
 
 alter table public.profiles enable row level security;
@@ -333,6 +417,8 @@ create policy "Owners can read group invites"
   on public.group_invites for select
   to authenticated
   using (
+    invitee_id = auth.uid()
+    or
     exists (
       select 1 from public.groups g
       where g.id = group_id and g.owner_id = auth.uid()
