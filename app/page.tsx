@@ -7,11 +7,13 @@ import {
   Camera,
   Check,
   Clock3,
+  Copy,
   Image as ImageIcon,
   Info,
   LogOut,
   Moon,
   Plus,
+  Pencil,
   RefreshCw,
   Search,
   Send,
@@ -252,6 +254,13 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const inviteToken = new URLSearchParams(window.location.search).get("invite");
+    if (!inviteToken) return;
+    localStorage.setItem("connection-pending-invite", inviteToken);
+    window.history.replaceState({}, "", window.location.pathname);
+  }, []);
+
+  useEffect(() => {
     if (!supabase) return;
 
     supabase.auth.getSession().then(({ data }) => {
@@ -279,6 +288,11 @@ export default function Home() {
 
     void loadWorkspace(sessionUserId);
   }, [sessionUserId]);
+
+  useEffect(() => {
+    if (!sessionUserId || !profile) return;
+    void acceptPendingInvite();
+  }, [sessionUserId, profile]);
 
   async function loadWorkspace(userId = sessionUserId) {
     if (!supabase || !userId) return;
@@ -370,6 +384,26 @@ export default function Home() {
     await loadPhotos();
 
     setLoading(false);
+  }
+
+  async function acceptPendingInvite() {
+    if (!supabase) return;
+    const inviteToken = localStorage.getItem("connection-pending-invite");
+    if (!inviteToken || sessionStorage.getItem(`connection-invite-${inviteToken}`)) return;
+
+    sessionStorage.setItem(`connection-invite-${inviteToken}`, "true");
+    const { data, error } = await supabase.rpc("accept_group_invite", {
+      invite_token: inviteToken
+    });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    localStorage.removeItem("connection-pending-invite");
+    setMessage(`Joined ${data?.name ?? "group"}.`);
+    await loadWorkspace();
   }
 
   async function authHeaders() {
@@ -841,6 +875,21 @@ function CalendarView({
   view: ViewMode;
 }) {
   const writableGroup = calendarGroup ?? groups[0] ?? null;
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const editingEvent = editingEventId ? events.find((event) => event.id === editingEventId) ?? null : null;
+  const formGroup = editingEvent ? groups.find((group) => group.id === editingEvent.group_id) ?? writableGroup : writableGroup;
+
+  async function deleteEvent(event: EventItem) {
+    if (!supabase) return;
+    setMessage("");
+    const { error } = await supabase.from("events").delete().eq("id", event.id);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+    if (editingEventId === event.id) setEditingEventId(null);
+    reload();
+  }
 
   return (
     <section className="flex flex-col gap-4">
@@ -885,13 +934,21 @@ function CalendarView({
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <EventList
+          editableGroups={groups.filter((group) => group.role === "owner" || group.role === "editor").map((group) => group.id)}
           emptyBody="Pick a date or add a shared plan for a group."
           events={selectedDayEvents}
+          onDelete={(event) => void deleteEvent(event)}
+          onEdit={(event) => {
+            setCalendarGroupId(event.group_id);
+            setEditingEventId(event.id);
+          }}
           timezone={timezone}
         />
-        {writableGroup ? (
+        {formGroup ? (
           <EventForm
-            group={writableGroup}
+            editingEvent={editingEvent}
+            group={formGroup}
+            onCancelEdit={() => setEditingEventId(null)}
             profile={profile}
             reload={reload}
             selectedDate={selectedDate}
@@ -1691,6 +1748,7 @@ function MemberPanel({
 }) {
   const [invite, setInvite] = useState("");
   const [role, setRole] = useState<"editor" | "viewer">("viewer");
+  const [busyLink, setBusyLink] = useState(false);
 
   async function inviteMember(event: FormEvent) {
     event.preventDefault();
@@ -1719,6 +1777,41 @@ function MemberPanel({
 
     setInvite("");
     reload();
+  }
+
+  async function copyInviteLink() {
+    if (!supabase) return;
+    setBusyLink(true);
+    setMessage("");
+
+    const token = crypto.randomUUID().replaceAll("-", "");
+    const {
+      data: { user }
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      setMessage("Authentication required.");
+      setBusyLink(false);
+      return;
+    }
+
+    const { error } = await supabase.from("group_invites").insert({
+      group_id: group.id,
+      token,
+      role,
+      created_by: user.id
+    });
+
+    if (error) {
+      setMessage(error.message);
+      setBusyLink(false);
+      return;
+    }
+
+    const inviteUrl = `${window.location.origin}${window.location.pathname}?invite=${token}`;
+    await navigator.clipboard.writeText(inviteUrl);
+    setMessage("Invite link copied.");
+    setBusyLink(false);
   }
 
   return (
@@ -1754,6 +1847,15 @@ function MemberPanel({
           </button>
         </div>
       </form>
+      <button
+        className="mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-line px-4 py-2.5 text-sm font-medium disabled:opacity-45 dark:border-white/15"
+        disabled={group.role !== "owner" || busyLink}
+        onClick={() => void copyInviteLink()}
+        type="button"
+      >
+        <Copy size={15} />
+        Copy invite link
+      </button>
     </section>
   );
 }
@@ -1833,12 +1935,18 @@ function CalendarSurface({
 }
 
 function EventList({
+  editableGroups,
   emptyBody,
   events,
+  onDelete,
+  onEdit,
   timezone
 }: {
+  editableGroups: string[];
   emptyBody: string;
   events: EventItem[];
+  onDelete: (event: EventItem) => void;
+  onEdit: (event: EventItem) => void;
   timezone: string;
 }) {
   if (!events.length) {
@@ -1850,6 +1958,7 @@ function EventList({
       {events.map((event) => {
         const local = localDateTime(event, timezone);
         const original = sourceDateTime(event);
+        const canEdit = editableGroups.includes(event.group_id);
 
         return (
           <article
@@ -1861,18 +1970,39 @@ function EventList({
                 <h3 className="truncate text-lg font-semibold">{event.title}</h3>
                 {event.location ? <p className="text-sm text-ink/60 dark:text-paper/60">{event.location}</p> : null}
               </div>
-              <div className="rounded-lg bg-moss px-3 py-2 text-right text-sm font-medium text-white">
-                <div>{local.toFormat("h:mm a")}</div>
-                <div className="text-xs opacity-80">{local.toFormat("LLL d")}</div>
+              <div className="flex items-start gap-2">
+                <div className="rounded-lg bg-moss px-3 py-2 text-right text-sm font-medium text-white">
+                  <div>{local.toFormat("h:mm a")}</div>
+                  <div className="text-xs opacity-80">{local.toFormat("LLL d")}</div>
+                </div>
+                {canEdit ? (
+                  <div className="flex gap-1">
+                    <button
+                      aria-label="Edit event"
+                      className="grid h-9 w-9 place-items-center rounded-full border border-line bg-paper dark:border-white/15 dark:bg-[#1d1d1a]"
+                      onClick={() => onEdit(event)}
+                      type="button"
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      aria-label="Delete event"
+                      className="grid h-9 w-9 place-items-center rounded-full border border-line bg-paper dark:border-white/15 dark:bg-[#1d1d1a]"
+                      onClick={() => onDelete(event)}
+                      type="button"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                ) : null}
               </div>
             </div>
             {event.description ? (
               <p className="mt-3 text-sm leading-6 text-ink/70 dark:text-paper/70">{event.description}</p>
             ) : null}
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <TimeChip label="Your time" time={local.toFormat("ccc, LLL d, h:mm a")} zone={timezone} />
               <TimeChip label="Entered as" time={original.toFormat("ccc, LLL d, h:mm a")} zone={event.source_timezone} />
-              <TimeChip label="UTC" time={DateTime.fromISO(event.starts_at_utc).toUTC().toFormat("HH:mm")} zone="UTC" />
             </div>
           </article>
         );
@@ -1882,13 +2012,17 @@ function EventList({
 }
 
 function EventForm({
+  editingEvent,
   group,
+  onCancelEdit,
   profile,
   selectedDate,
   reload,
   setMessage
 }: {
+  editingEvent: EventItem | null;
   group: Group;
+  onCancelEdit: () => void;
   profile: Profile;
   selectedDate: string;
   reload: () => void;
@@ -1901,9 +2035,21 @@ function EventForm({
   const [time, setTime] = useState("12:00");
   const [timezone, setTimezone] = useState(profile.preferred_timezone);
 
-  useEffect(() => setDate(selectedDate), [selectedDate]);
+  useEffect(() => {
+    if (!editingEvent) setDate(selectedDate);
+  }, [editingEvent, selectedDate]);
+  useEffect(() => {
+    if (!editingEvent) return;
+    const original = sourceDateTime(editingEvent);
+    setTitle(editingEvent.title);
+    setDescription(editingEvent.description ?? "");
+    setLocation(editingEvent.location ?? "");
+    setDate(original.toISODate() ?? selectedDate);
+    setTime(original.toFormat("HH:mm"));
+    setTimezone(editingEvent.source_timezone);
+  }, [editingEvent, selectedDate]);
 
-  async function createEvent(event: FormEvent) {
+  async function saveEvent(event: FormEvent) {
     event.preventDefault();
     if (!supabase || !title.trim()) return;
     setMessage("");
@@ -1914,15 +2060,21 @@ function EventForm({
       return;
     }
 
-    const { error } = await supabase.from("events").insert({
-      group_id: group.id,
+    const payload = {
       title: title.trim(),
       description: description.trim() || null,
       location: location.trim() || null,
       starts_at_utc: instant.toUTC().toISO(),
-      source_timezone: timezone,
-      creator_id: profile.id
-    });
+      source_timezone: timezone
+    };
+
+    const { error } = editingEvent
+      ? await supabase.from("events").update(payload).eq("id", editingEvent.id)
+      : await supabase.from("events").insert({
+          ...payload,
+          group_id: group.id,
+          creator_id: profile.id
+        });
 
     if (error) {
       setMessage(error.message);
@@ -1932,6 +2084,7 @@ function EventForm({
     setTitle("");
     setDescription("");
     setLocation("");
+    onCancelEdit();
     reload();
   }
 
@@ -1940,10 +2093,10 @@ function EventForm({
   return (
     <section className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
       <div className="mb-4 flex items-center gap-2">
-        <Plus size={18} />
-        <h2 className="font-semibold">Add event</h2>
+        {editingEvent ? <Pencil size={18} /> : <Plus size={18} />}
+        <h2 className="font-semibold">{editingEvent ? "Edit event" : "Add event"}</h2>
       </div>
-      <form className="flex flex-col gap-3" onSubmit={createEvent}>
+      <form className="flex flex-col gap-3" onSubmit={saveEvent}>
         <Field label="Title" value={title} onChange={setTitle} required disabled={!canEdit} />
         <Field label="Location" value={location} onChange={setLocation} disabled={!canEdit} />
         <label className="flex flex-col gap-1 text-sm font-medium">
@@ -1964,8 +2117,17 @@ function EventForm({
           disabled={!canEdit}
           className="rounded-full bg-ink px-4 py-3 font-medium text-paper shadow-sm disabled:opacity-45 dark:bg-paper dark:text-ink"
         >
-          {canEdit ? "Save event" : "Viewer access"}
+          {canEdit ? (editingEvent ? "Update event" : "Save event") : "Viewer access"}
         </button>
+        {editingEvent ? (
+          <button
+            className="rounded-full border border-line px-4 py-3 font-medium dark:border-white/15"
+            onClick={onCancelEdit}
+            type="button"
+          >
+            Cancel edit
+          </button>
+        ) : null}
       </form>
     </section>
   );
@@ -2012,21 +2174,34 @@ function SelectField({
   onChange: (value: string) => void;
   disabled?: boolean;
 }) {
+  const options = useMemo(() => {
+    const browserZones =
+      typeof Intl.supportedValuesOf === "function"
+        ? Intl.supportedValuesOf("timeZone")
+        : [];
+    return [...new Set([value, browserTimezone(), ...timezones, ...browserZones])].filter(Boolean).sort();
+  }, [value]);
+  const listId = `${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-zones`;
+
   return (
     <label className="flex flex-col gap-1 text-sm font-medium">
       {label}
-      <select
+      <input
+        autoComplete="off"
         className="rounded-full border border-line bg-white px-3 py-2 text-sm font-normal text-ink outline-none transition focus:border-moss disabled:opacity-50 dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+        list={listId}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         disabled={disabled}
-      >
-        {[...new Set([value, browserTimezone(), ...timezones])].map((timezone) => (
+        placeholder="Search timezone"
+      />
+      <datalist id={listId}>
+        {options.map((timezone) => (
           <option key={timezone} value={timezone}>
             {timezone}
           </option>
         ))}
-      </select>
+      </datalist>
     </label>
   );
 }

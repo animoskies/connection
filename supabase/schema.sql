@@ -48,6 +48,18 @@ create table if not exists public.group_members (
   primary key (group_id, user_id)
 );
 
+create table if not exists public.group_invites (
+  id uuid primary key default gen_random_uuid(),
+  group_id uuid not null references public.groups(id) on delete cascade,
+  token text not null unique,
+  role public.group_role not null default 'viewer',
+  created_by uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists group_invites_token_idx on public.group_invites(token);
+create index if not exists group_invites_group_id_idx on public.group_invites(group_id);
+
 create table if not exists public.connections (
   requester_id uuid not null references public.profiles(id) on delete cascade,
   addressee_id uuid not null references public.profiles(id) on delete cascade,
@@ -172,9 +184,45 @@ begin
 end;
 $$;
 
+create or replace function public.accept_group_invite(invite_token text)
+returns public.groups
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  invite public.group_invites;
+  joined_group public.groups;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  select * into invite
+  from public.group_invites
+  where token = invite_token
+  limit 1;
+
+  if invite.id is null then
+    raise exception 'Invite link is invalid or expired';
+  end if;
+
+  insert into public.group_members (group_id, user_id, role)
+  values (invite.group_id, auth.uid(), invite.role)
+  on conflict (group_id, user_id) do nothing;
+
+  select * into joined_group
+  from public.groups
+  where id = invite.group_id;
+
+  return joined_group;
+end;
+$$;
+
 alter table public.profiles enable row level security;
 alter table public.groups enable row level security;
 alter table public.group_members enable row level security;
+alter table public.group_invites enable row level security;
 alter table public.connections enable row level security;
 alter table public.events enable row level security;
 alter table public.photos enable row level security;
@@ -189,6 +237,9 @@ drop policy if exists "Members can read memberships" on public.group_members;
 drop policy if exists "Owners can add members" on public.group_members;
 drop policy if exists "Owners can manage members" on public.group_members;
 drop policy if exists "Owners can remove members" on public.group_members;
+drop policy if exists "Owners can read group invites" on public.group_invites;
+drop policy if exists "Owners can create group invites" on public.group_invites;
+drop policy if exists "Owners can delete group invites" on public.group_invites;
 drop policy if exists "Users can read their connections" on public.connections;
 drop policy if exists "Users can request connections" on public.connections;
 drop policy if exists "Users can accept their connections" on public.connections;
@@ -276,6 +327,37 @@ create policy "Owners can remove members"
       where g.id = group_id and g.owner_id = auth.uid()
     )
     or user_id = auth.uid()
+  );
+
+create policy "Owners can read group invites"
+  on public.group_invites for select
+  to authenticated
+  using (
+    exists (
+      select 1 from public.groups g
+      where g.id = group_id and g.owner_id = auth.uid()
+    )
+  );
+
+create policy "Owners can create group invites"
+  on public.group_invites for insert
+  to authenticated
+  with check (
+    created_by = auth.uid()
+    and exists (
+      select 1 from public.groups g
+      where g.id = group_id and g.owner_id = auth.uid()
+    )
+  );
+
+create policy "Owners can delete group invites"
+  on public.group_invites for delete
+  to authenticated
+  using (
+    exists (
+      select 1 from public.groups g
+      where g.id = group_id and g.owner_id = auth.uid()
+    )
   );
 
 create policy "Users can read their connections"
