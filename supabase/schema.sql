@@ -303,6 +303,38 @@ as $$
   limit 1;
 $$;
 
+create or replace function public.pending_group_invites()
+returns table (
+  id uuid,
+  token text,
+  group_id uuid,
+  group_name text,
+  role public.group_role,
+  inviter_name text,
+  created_at timestamptz
+)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    gi.id,
+    gi.token,
+    g.id,
+    g.name,
+    gi.role,
+    coalesce(p.display_name, p.username),
+    gi.created_at
+  from public.group_invites gi
+  join public.groups g on g.id = gi.group_id
+  join public.profiles p on p.id = gi.created_by
+  where gi.invitee_id = auth.uid()
+    and gi.accepted_at is null
+    and gi.declined_at is null
+  order by gi.created_at desc;
+$$;
+
 alter table public.profiles enable row level security;
 alter table public.groups enable row level security;
 alter table public.group_members enable row level security;

@@ -97,6 +97,16 @@ type InvitePreview = {
   inviterName: string;
 };
 
+type PendingGroupInviteRow = {
+  id: string;
+  token: string;
+  group_id: string;
+  group_name: string | null;
+  role: "owner" | "editor" | "viewer";
+  inviter_name: string | null;
+  created_at: string;
+};
+
 const supabase = hasSupabaseConfig ? createSupabaseClient() : null;
 const memoryPhotoClass = "h-full w-full object-cover";
 const nativePhotoMaxSize = 1280;
@@ -431,13 +441,7 @@ export default function Home() {
   async function loadGroupInvites(userId = sessionUserId) {
     if (!supabase || !userId) return;
 
-    const { data, error } = await supabase
-      .from("group_invites")
-      .select("id, group_id, token, role, created_at, groups(id, name), profiles!group_invites_created_by_fkey(display_name, username)")
-      .eq("invitee_id", userId)
-      .is("accepted_at", null)
-      .is("declined_at", null)
-      .order("created_at", { ascending: false });
+    const { data, error } = await supabase.rpc("pending_group_invites");
 
     if (error) {
       setMessage(error.message);
@@ -445,16 +449,14 @@ export default function Home() {
     }
 
     setGroupInvites(
-      (data ?? []).map((invite) => {
-        const group = Array.isArray(invite.groups) ? invite.groups[0] : invite.groups;
-        const inviter = Array.isArray(invite.profiles) ? invite.profiles[0] : invite.profiles;
+      ((data ?? []) as PendingGroupInviteRow[]).map((invite) => {
         return {
           id: invite.id,
           token: invite.token,
           groupId: invite.group_id,
-          groupName: group?.name ?? "Group",
+          groupName: invite.group_name ?? "Group",
           role: invite.role,
-          inviterName: inviter?.display_name ?? inviter?.username ?? "Someone",
+          inviterName: invite.inviter_name ?? "Someone",
           createdAt: invite.created_at
         } as GroupInvite;
       })
