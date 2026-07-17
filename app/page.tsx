@@ -161,7 +161,29 @@ export default function Home() {
 
   useEffect(() => {
     if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
-      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        const updateKey = "connection-sw-updated";
+        if (sessionStorage.getItem(updateKey)) return;
+        sessionStorage.setItem(updateKey, "true");
+        window.location.reload();
+      });
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((registration) => {
+          registration.update().catch(() => undefined);
+          if (registration.waiting) {
+            registration.waiting.postMessage({ type: "SKIP_WAITING" });
+          }
+          registration.addEventListener("updatefound", () => {
+            const worker = registration.installing;
+            worker?.addEventListener("statechange", () => {
+              if (worker.state === "installed" && navigator.serviceWorker.controller) {
+                worker.postMessage({ type: "SKIP_WAITING" });
+              }
+            });
+          });
+        })
+        .catch(() => undefined);
     }
   }, []);
 
