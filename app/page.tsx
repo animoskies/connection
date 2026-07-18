@@ -1432,8 +1432,8 @@ export default function Home() {
             <span>{pullRefreshLabel}</span>
           </div>
         ) : null}
-        <header className="sticky top-0 z-20 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-3">
-          <div className="flex items-center gap-2">
+        <header className="sticky top-0 z-20 flex items-center justify-between py-3">
+          <div className="flex w-24 items-center gap-2">
             <label
               aria-label="Open camera"
               className="grid h-11 w-11 cursor-pointer place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
@@ -1465,8 +1465,8 @@ export default function Home() {
               </button>
             ) : null}
           </div>
-          <ConnectionLogo compact className="justify-self-center" />
-          <div ref={notificationAreaRef} className="relative flex items-center justify-end gap-2">
+          <ConnectionLogo compact className="pointer-events-none absolute left-1/2 -translate-x-1/2" />
+          <div ref={notificationAreaRef} className="relative flex w-24 items-center justify-end gap-2">
             <button
               aria-label="Notifications"
               className="relative grid h-11 w-11 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
@@ -2772,7 +2772,7 @@ function ConnectionLogo({ className, compact = false }: { className?: string; co
     <div
       className={clsx(
         "select-none text-center font-semibold tracking-normal text-ink dark:text-paper",
-        compact ? "text-3xl leading-none sm:text-4xl" : "text-3xl",
+        compact ? "text-2xl leading-none sm:text-3xl" : "text-3xl",
         className
       )}
       aria-label="Connection"
