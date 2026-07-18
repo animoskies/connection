@@ -567,6 +567,14 @@ export default function Home() {
   }, [activeTab]);
 
   useEffect(() => {
+    if (activeTab !== "connections" || !headerSearchOpen || selectedConnectionId) return;
+    const timeout = window.setTimeout(() => {
+      void searchConnections(connectionQuery);
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [activeTab, connectionQuery, headerSearchOpen, selectedConnectionId]);
+
+  useEffect(() => {
     if (!notificationsOpen) return;
 
     const closeOnOutsidePointer = (event: PointerEvent) => {
@@ -1413,13 +1421,9 @@ export default function Home() {
                 aria-label="Search"
                 className="grid h-11 w-11 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
                 onClick={() => {
-                  setHeaderSearchOpen((value) => {
-                    if (value) {
-                      setConnectionQuery("");
-                      setConnectionSearchResults([]);
-                    }
-                    return !value;
-                  });
+                  setAccountOpen(false);
+                  setNotificationsOpen(false);
+                  setHeaderSearchOpen(true);
                 }}
                 type="button"
               >
@@ -1427,20 +1431,7 @@ export default function Home() {
               </button>
             ) : null}
           </div>
-          {activeTab === "connections" && headerSearchOpen && !selectedConnectionId ? (
-            <input
-              autoCapitalize="none"
-              autoComplete="off"
-              autoCorrect="off"
-              autoFocus
-              className="h-11 min-w-0 justify-self-stretch border-b border-line bg-transparent px-1 text-base font-medium outline-none placeholder:text-ink/40 dark:border-white/15 dark:text-paper dark:placeholder:text-paper/40"
-              placeholder="Search"
-              value={connectionQuery}
-              onChange={(event) => setConnectionQuery(event.target.value)}
-            />
-          ) : (
-            <ConnectionLogo compact className="justify-self-center" />
-          )}
+          <ConnectionLogo compact className="justify-self-center" />
           <div ref={notificationAreaRef} className="relative flex items-center justify-end gap-2">
             <button
               aria-label="Notifications"
@@ -1496,6 +1487,26 @@ export default function Home() {
           </div>
         </header>
 
+        {activeTab === "connections" && headerSearchOpen && !selectedConnectionId ? (
+          <ConnectionSearchModal
+            query={connectionQuery}
+            results={connectionSearchResults}
+            setQuery={setConnectionQuery}
+            onClose={() => {
+              setHeaderSearchOpen(false);
+              setConnectionQuery("");
+              setConnectionSearchResults([]);
+            }}
+            onOpenProfile={(profileId) => {
+              setHeaderSearchOpen(false);
+              setConnectionQuery("");
+              setConnectionSearchResults([]);
+              setSelectedConnectionId(profileId);
+            }}
+            onSendRequest={(profileId) => void sendConnectionRequest(profileId)}
+          />
+        ) : null}
+
         {message ? (
           <div className="fixed left-1/2 top-5 z-50 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 rounded-full border border-line bg-white px-4 py-3 text-center text-sm font-medium text-ink shadow-soft dark:border-white/15 dark:bg-[#242420] dark:text-paper">
             {message}
@@ -1510,14 +1521,10 @@ export default function Home() {
           <ConnectionsView
             openPhoto={openPhoto}
             photos={connectionPhotos}
-            query={connectionQuery}
-            searchResults={connectionSearchResults}
             selectedConnection={selectedConnection}
             onBack={() => setSelectedConnectionId(null)}
             onOpenProfile={setSelectedConnectionId}
             onRemoveConnection={(profileId) => void removeConnection(profileId)}
-            onSearch={(query) => void searchConnections(query)}
-            onSendRequest={(profileId) => void sendConnectionRequest(profileId)}
           />
         ) : null}
 
@@ -1650,34 +1657,19 @@ function GalleryView({
 function ConnectionsView({
   openPhoto,
   photos,
-  query,
-  searchResults,
   selectedConnection,
   onBack,
   onOpenProfile,
-  onRemoveConnection,
-  onSearch,
-  onSendRequest
+  onRemoveConnection
 }: {
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
-  query: string;
-  searchResults: ConnectionProfile[];
   selectedConnection: ConnectionProfile | null;
   onBack: () => void;
   onOpenProfile: (profileId: string) => void;
   onRemoveConnection: (profileId: string) => void;
-  onSearch: (query: string) => void;
-  onSendRequest: (profileId: string) => void;
 }) {
   const owners = [...new Set(photos.map((photo) => photo.ownerId))];
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      void onSearch(query);
-    }, 250);
-    return () => window.clearTimeout(timeout);
-  }, [query]);
 
   if (selectedConnection) {
     const profilePhotos = photos.filter((photo) => photo.ownerId === selectedConnection.id);
@@ -1721,23 +1713,6 @@ function ConnectionsView({
 
   return (
     <section className="flex flex-col gap-7">
-      {query.trim().length >= 2 ? (
-        <section className="grid gap-3">
-          {searchResults.length ? (
-            searchResults.map((result) => (
-              <ConnectionSearchResult
-                key={result.id}
-                profile={result}
-                onOpenProfile={onOpenProfile}
-                onSendRequest={onSendRequest}
-              />
-            ))
-          ) : (
-            <p className="text-sm text-ink/55 dark:text-paper/55">No matching people yet.</p>
-          )}
-        </section>
-      ) : null}
-
       {photos.length ? (
         <section className="flex flex-col gap-7">
           {owners.map((owner) => {
@@ -1759,10 +1734,84 @@ function ConnectionsView({
             );
           })}
         </section>
-      ) : query.trim().length < 2 ? (
+      ) : (
         <EmptyPanel title="No shared feed yet" body="Search for someone to connect with." />
-      ) : null}
+      )}
     </section>
+  );
+}
+
+function ConnectionSearchModal({
+  query,
+  results,
+  setQuery,
+  onClose,
+  onOpenProfile,
+  onSendRequest
+}: {
+  query: string;
+  results: ConnectionProfile[];
+  setQuery: (value: string) => void;
+  onClose: () => void;
+  onOpenProfile: (profileId: string) => void;
+  onSendRequest: (profileId: string) => void;
+}) {
+  const trimmedQuery = query.trim();
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-start bg-black/20 px-3 pt-[calc(5rem+env(safe-area-inset-top))] backdrop-blur-sm dark:bg-black/45"
+      onClick={onClose}
+    >
+      <section
+        className="mx-auto w-full max-w-lg rounded-2xl border border-white/80 bg-white p-4 text-ink shadow-soft dark:border-white/15 dark:bg-[#242420] dark:text-paper"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold">Search</h2>
+          <button
+            className="text-sm font-semibold text-ink/55 transition hover:text-ink dark:text-paper/55 dark:hover:text-paper"
+            onClick={onClose}
+            type="button"
+          >
+            Cancel
+          </button>
+        </div>
+        <label className="mb-4 flex items-center gap-2 border-b border-line px-1 py-3 dark:border-white/15">
+          <Search size={19} />
+          <input
+            autoCapitalize="none"
+            autoComplete="off"
+            autoCorrect="off"
+            autoFocus
+            className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-ink/40 dark:placeholder:text-paper/40"
+            placeholder="Search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
+        <div className="max-h-[55vh] overflow-y-auto overscroll-contain pr-1">
+          {trimmedQuery.length < 2 ? (
+            <p className="py-8 text-center text-sm text-ink/55 dark:text-paper/55">
+              Search by username or name.
+            </p>
+          ) : results.length ? (
+            <section className="grid gap-3">
+              {results.map((result) => (
+                <ConnectionSearchResult
+                  key={result.id}
+                  profile={result}
+                  onOpenProfile={onOpenProfile}
+                  onSendRequest={onSendRequest}
+                />
+              ))}
+            </section>
+          ) : (
+            <p className="py-8 text-center text-sm text-ink/55 dark:text-paper/55">No matching people yet.</p>
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 
