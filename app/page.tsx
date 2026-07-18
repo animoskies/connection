@@ -3431,7 +3431,7 @@ function GroupThumb({ groupId, photos }: { groupId: string; photos: PhotoItem[] 
   const image = photos.find((photo) => photo.groupId === groupId)?.src;
 
   return (
-    <span className="block h-16 w-16 overflow-hidden rounded-lg bg-paper dark:bg-[#1d1d1a]">
+    <span className="block h-16 w-16 overflow-hidden rounded-full bg-paper dark:bg-[#1d1d1a]">
       {image ? <img alt="" className={memoryPhotoClass} src={image} /> : null}
     </span>
   );
