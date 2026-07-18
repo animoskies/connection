@@ -1268,6 +1268,7 @@ export default function Home() {
   const activeGroup = groups.find((group) => group.id === activeGroupId) ?? null;
   const allPhotos = photos;
   const myPhotos = profile ? photos.filter((photo) => photo.ownerId === profile.id) : [];
+  const myPublicPhotos = myPhotos.filter((photo) => photo.groupId === null && photo.shareScope === "connections");
   const homePhotos = photos.filter((photo) => photo.groupId === null);
   const connectionPhotos = homePhotos.filter((photo) => photo.shareScope === "connections");
   const selectedPhoto = allPhotos.find((photo) => photo.id === selectedPhotoId) ?? null;
@@ -1465,7 +1466,7 @@ export default function Home() {
             connections={connections}
             groups={groups}
             openPhoto={openPhoto}
-            photos={allPhotos}
+            photos={myPublicPhotos}
             profile={profile}
             onOpenConnection={(profileId) => {
               setSelectedConnectionId(profileId);
@@ -2249,6 +2250,8 @@ function SharePhotoSheet({
   onShare: (target: ShareTarget, caption: string) => void;
 }) {
   const [caption, setCaption] = useState("");
+  const [selectedTarget, setSelectedTarget] = useState<ShareTarget>({ type: "connections" });
+  const selectedKey = selectedTarget.type === "group" ? `group:${selectedTarget.groupId}` : "connections";
 
   return (
     <div className="fixed inset-0 z-40 flex items-end bg-black/45 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-ink">
@@ -2277,9 +2280,12 @@ function SharePhotoSheet({
 
         <div className="grid gap-2">
           <button
-            className="flex items-center justify-between border border-line px-3 py-3 text-left dark:border-white/15"
+            className={clsx(
+              "flex items-center justify-between border px-3 py-3 text-left transition dark:border-white/15",
+              selectedKey === "connections" ? "border-ink bg-paper dark:border-paper dark:bg-[#1d1d1a]" : "border-line"
+            )}
             disabled={photoUploading}
-            onClick={() => onShare({ type: "connections" }, caption)}
+            onClick={() => setSelectedTarget({ type: "connections" })}
             type="button"
           >
             <span>
@@ -2292,9 +2298,12 @@ function SharePhotoSheet({
           {groups.map((group) => (
             <button
               key={group.id}
-              className="flex items-center justify-between border border-line px-3 py-3 text-left dark:border-white/15"
+              className={clsx(
+                "flex items-center justify-between border px-3 py-3 text-left transition dark:border-white/15",
+                selectedKey === `group:${group.id}` ? "border-ink bg-paper dark:border-paper dark:bg-[#1d1d1a]" : "border-line"
+              )}
               disabled={photoUploading}
-              onClick={() => onShare({ type: "group", groupId: group.id }, caption)}
+              onClick={() => setSelectedTarget({ type: "group", groupId: group.id })}
               type="button"
             >
               <span>
@@ -2307,6 +2316,15 @@ function SharePhotoSheet({
             </button>
           ))}
         </div>
+
+        <button
+          className="mt-4 w-full rounded-full bg-ink px-4 py-3 font-medium text-paper transition disabled:opacity-45 dark:bg-paper dark:text-ink"
+          disabled={photoUploading}
+          onClick={() => onShare(selectedTarget, caption)}
+          type="button"
+        >
+          {photoUploading ? "Uploading..." : "Upload"}
+        </button>
 
         {photoUploading ? <p className="mt-3 text-sm text-ink/55 dark:text-paper/55">Saving photo...</p> : null}
       </section>
