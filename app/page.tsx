@@ -301,6 +301,19 @@ function downloadEventIcs(event: EventItem) {
   URL.revokeObjectURL(url);
 }
 
+function openGoogleCalendar(event: EventItem) {
+  const start = DateTime.fromISO(event.starts_at_utc, { zone: "utc" });
+  const end = start.plus({ hours: 1 });
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: event.title,
+    dates: `${start.toFormat("yyyyLLdd'T'HHmmss'Z'")}/${end.toFormat("yyyyLLdd'T'HHmmss'Z'")}`,
+    details: event.description ?? "",
+    location: event.location ?? ""
+  });
+  window.open(`https://calendar.google.com/calendar/render?${params.toString()}`, "_blank", "noopener,noreferrer");
+}
+
 function localDateTime(event: EventItem, timezone: string) {
   return DateTime.fromISO(event.starts_at_utc, { zone: "utc" }).setZone(timezone);
 }
@@ -899,7 +912,7 @@ export default function Home() {
     if (type === "calendar_event") {
       setCalendarGroupId(groupId);
       if (eventDate) setSelectedDate(eventDate);
-      if (eventId && action !== "deleted") setCalendarEventToOpenId(eventId);
+      if (eventId && action !== "deleted") setView("agenda");
       setActiveTab("calendar");
       return;
     }
@@ -1533,7 +1546,15 @@ export default function Home() {
         ) : null}
       </div>
 
-      <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
+      <BottomNav
+        activeTab={activeTab}
+        setActiveTab={(tab) => {
+          if (tab === "groups" && activeTab === "groups") {
+            setActiveGroupId(null);
+          }
+          setActiveTab(tab);
+        }}
+      />
 
       {selectedPhoto ? (
         <PhotoViewer
@@ -3751,14 +3772,22 @@ function EventList({
               </div>
             </div>
             {actionEventId === event.id ? (
-              <div className="mt-3 grid grid-cols-3 gap-2 border-t border-line pt-3 dark:border-white/15">
+              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-line pt-3 dark:border-white/15 sm:grid-cols-4">
                 <button
                   className="flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-sm dark:border-white/15"
                   onClick={() => downloadEventIcs(event)}
                   type="button"
                 >
                   <Download size={15} />
-                  ICS
+                  Apple
+                </button>
+                <button
+                  className="flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-sm dark:border-white/15"
+                  onClick={() => openGoogleCalendar(event)}
+                  type="button"
+                >
+                  <CalendarDays size={15} />
+                  Google
                 </button>
                 <button
                   className="flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-sm disabled:opacity-40 dark:border-white/15"
