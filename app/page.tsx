@@ -4050,7 +4050,7 @@ function EventForm({
   const canEdit = group.role === "owner" || group.role === "editor";
 
   return (
-    <section className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-white/70 bg-white p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420] sm:rounded-2xl">
+    <section className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-white/70 bg-white p-4 text-ink shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420] dark:text-paper sm:rounded-2xl">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           {editingEvent ? <Pencil size={18} /> : <Plus size={18} />}
@@ -4100,7 +4100,7 @@ function EventForm({
         </button>
         {editingEvent ? (
           <button
-            className="rounded-full border border-line px-4 py-3 font-medium dark:border-white/15"
+            className="rounded-full border border-line px-4 py-3 font-medium text-ink dark:border-white/15 dark:text-paper"
             onClick={onCancelEdit}
             type="button"
           >
