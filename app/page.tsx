@@ -600,29 +600,6 @@ export default function Home() {
   }, [notificationsOpen]);
 
   useEffect(() => {
-    if (!sessionUserId || !profile) return;
-
-    const loadLightweightNotifications = () => {
-      void loadGroupNotifications();
-      void loadGroupInvites(sessionUserId);
-      void loadConnectionRequests();
-    };
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") loadLightweightNotifications();
-    };
-
-    const interval = window.setInterval(loadLightweightNotifications, 10000);
-    window.addEventListener("focus", loadLightweightNotifications);
-    document.addEventListener("visibilitychange", handleVisibility);
-
-    return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", loadLightweightNotifications);
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
-  }, [sessionUserId, profile?.id]);
-
-  useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
 
     if (process.env.NODE_ENV !== "production") {
