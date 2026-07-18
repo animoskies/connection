@@ -170,6 +170,8 @@ function isTransientMessage(message: string) {
     "Connection request accepted.",
     "Connection request declined.",
     "Connection removed.",
+    "Group created.",
+    "Group created. Invites sent.",
     "Group name updated.",
     "Calendar event added.",
     "Calendar event updated.",
@@ -1919,7 +1921,7 @@ function SharePhotoSheet({
               type="button"
             >
               <span>
-                <span className="block font-medium capitalize">{group.name}</span>
+                <span className="block font-medium">{group.name}</span>
                 <span className="block text-sm text-ink/55 dark:text-paper/55">
                   {group.member_count} {group.member_count === 1 ? "member" : "members"}
                 </span>
@@ -2470,6 +2472,8 @@ function GroupPanel({
   setMessage: (value: string) => void;
 }) {
   const [name, setName] = useState("");
+  const [memberNames, setMemberNames] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
   const [inviteGroupId, setInviteGroupId] = useState<string | null>(null);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -2493,9 +2497,38 @@ function GroupPanel({
       return;
     }
 
+    const usernames = [...new Set(memberNames.split(/[,\s]+/).map((member) => member.trim().replace(/^@/, "")).filter(Boolean))];
+    if (usernames.length) {
+      const { data: profiles, error: profileError } = await supabase
+        .from("profiles")
+        .select("id")
+        .in("username", usernames);
+
+      if (profileError) {
+        setMessage(profileError.message);
+      } else {
+        const invites = (profiles ?? [])
+          .filter((profile) => profile.id !== user.id)
+          .map((profile) => ({
+            group_id: group.id,
+            token: crypto.randomUUID().replaceAll("-", ""),
+            role: "viewer" as const,
+            created_by: user.id,
+            invitee_id: profile.id
+          }));
+
+        if (invites.length) {
+          const { error: inviteError } = await supabase.from("group_invites").insert(invites);
+          if (inviteError) setMessage(inviteError.message);
+        }
+      }
+    }
+
     setName("");
-    setActiveGroupId(group.id);
-    reload();
+    setMemberNames("");
+    setAddOpen(false);
+    await reload();
+    setMessage(usernames.length ? "Group created. Invites sent." : "Group created.");
   }
 
   function startRename(group: Group) {
@@ -2527,19 +2560,60 @@ function GroupPanel({
 
   return (
     <section>
-      <div className="mb-6 flex items-end justify-between gap-3">
-        <div>
-        <h1 className="text-2xl font-semibold">Groups</h1>
-          <p className="mt-1 text-sm text-ink/50 dark:text-paper/50">Private spaces for photos and shared plans.</p>
+      <div className="mb-5">
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold">Groups</h1>
+          <button
+            aria-label="Add group"
+            className="grid h-9 w-9 place-items-center rounded-full border border-line bg-white/85 text-ink shadow-sm dark:border-white/15 dark:bg-[#242420] dark:text-paper"
+            onClick={() => {
+              setInviteGroupId(null);
+              setEditingGroupId(null);
+              setAddOpen((value) => !value);
+            }}
+            type="button"
+          >
+            <Plus size={18} />
+          </button>
         </div>
+          <p className="mt-1 text-sm text-ink/50 dark:text-paper/50">Private spaces for photos and shared plans.</p>
       </div>
-      <div className="grid gap-3">
+
+      {addOpen ? (
+        <form className="mb-5 rounded-lg border border-white/70 bg-white/85 p-3 shadow-sm dark:border-white/15 dark:bg-[#242420]" onSubmit={createGroup}>
+          <div className="grid gap-3">
+            <input
+              className="rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+              placeholder="Group name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              autoFocus
+            />
+            <input
+              className="rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+              placeholder="Members by username, optional"
+              value={memberNames}
+              onChange={(event) => setMemberNames(event.target.value)}
+            />
+            <div className="flex justify-end gap-2">
+              <button className="rounded-full border border-line px-4 py-2 text-sm dark:border-white/15" onClick={() => setAddOpen(false)} type="button">
+                Cancel
+              </button>
+              <button className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-paper dark:bg-paper dark:text-ink">
+                Create
+              </button>
+            </div>
+          </div>
+        </form>
+      ) : null}
+
+      <div className="divide-y divide-line/70 rounded-lg border border-white/70 bg-white/70 shadow-sm dark:divide-white/10 dark:border-white/15 dark:bg-[#242420]">
         {groups.map((group) => {
           const groupPhotos = photos.filter((photo) => photo.groupId === group.id);
           const latestPhoto = groupPhotos[0] ?? null;
           const isEditing = editingGroupId === group.id;
           return (
-            <article key={group.id} className="rounded-lg border border-white/70 bg-white/80 p-3 shadow-sm dark:border-white/15 dark:bg-[#242420]">
+            <article key={group.id} className="p-3">
               {isEditing ? (
                 <form className="flex items-center gap-2" onSubmit={(event) => void renameGroup(event, group)}>
                   <GroupThumb groupId={group.id} photos={photos} />
@@ -2570,7 +2644,7 @@ function GroupPanel({
               >
                 <GroupThumb groupId={group.id} photos={photos} />
                 <span className="min-w-0">
-                  <span className="block truncate text-lg font-semibold capitalize">{group.name}</span>
+                  <span className="block truncate text-lg font-semibold">{group.name}</span>
                   <span className="block truncate text-sm text-ink/55 dark:text-paper/55">
                     {latestPhoto ? `${latestPhoto.owner} • ${photoTime(latestPhoto)}` : "No photos yet"}
                   </span>
@@ -2613,17 +2687,6 @@ function GroupPanel({
           );
         })}
       </div>
-      <form id="new-group-form" className="mt-5 flex gap-2 rounded-lg border border-white/70 bg-white/70 p-2 shadow-sm dark:border-white/15 dark:bg-[#242420]" onSubmit={createGroup}>
-        <input
-          className="min-w-0 flex-1 rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
-          placeholder="New group"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-        <button aria-label="Create group" className="grid h-10 w-10 place-items-center rounded-full bg-ink text-paper dark:bg-paper dark:text-ink">
-          <Plus size={18} />
-        </button>
-      </form>
     </section>
   );
 }
@@ -2663,7 +2726,7 @@ function GroupGallery({
           <ArrowLeft size={23} />
         </button>
         <div className="text-center">
-          <h1 className="text-lg font-semibold capitalize">{group.name}</h1>
+          <h1 className="text-lg font-semibold">{group.name}</h1>
           <p className="text-xs text-ink/55 dark:text-paper/55">
             {group.member_count} {group.member_count === 1 ? "member" : "members"}
           </p>
