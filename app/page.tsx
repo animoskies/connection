@@ -494,6 +494,7 @@ export default function Home() {
   const [pendingCaptureSrc, setPendingCaptureSrc] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
   const [view, setView] = useState<ViewMode>("agenda");
   const [selectedDate, setSelectedDate] = useState(DateTime.now().toISODate());
   const [calendarEventToOpenId, setCalendarEventToOpenId] = useState<string | null>(null);
@@ -504,6 +505,7 @@ export default function Home() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [pendingInvite, setPendingInvite] = useState<InvitePreview | null>(null);
   const notificationAreaRef = useRef<HTMLDivElement | null>(null);
+  const pullStartRef = useRef<number | null>(null);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
@@ -1299,6 +1301,8 @@ export default function Home() {
   const selectedDayEvents = useMemo(() => {
     return calendarEvents.filter((event) => localDateTime(event, preferredTimezone).toISODate() === selectedDate);
   }, [calendarEvents, preferredTimezone, selectedDate]);
+  const pullProgress = Math.min(1, pullDistance / 72);
+  const pullRefreshLabel = refreshing ? "Refreshing" : pullProgress >= 1 ? "Release to refresh" : "Pull to refresh";
 
   if (!hasSupabaseConfig) {
     return <ConfigScreen />;
@@ -1324,8 +1328,46 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen px-4 pb-24 pt-5 text-ink dark:text-paper sm:px-6 lg:px-8">
+    <main
+      className="min-h-screen px-4 pb-24 pt-5 text-ink dark:text-paper sm:px-6 lg:px-8"
+      onTouchStart={(event) => {
+        if (window.scrollY === 0 && !selectedPhoto && !pendingCaptureSrc && !refreshing) {
+          pullStartRef.current = event.touches[0]?.clientY ?? null;
+        }
+      }}
+      onTouchMove={(event) => {
+        if (pullStartRef.current === null) return;
+        const currentY = event.touches[0]?.clientY;
+        if (typeof currentY !== "number") return;
+        const distance = currentY - pullStartRef.current;
+        if (distance <= 0 || window.scrollY > 0) {
+          setPullDistance(0);
+          return;
+        }
+        setPullDistance(Math.min(96, distance * 0.55));
+      }}
+      onTouchEnd={() => {
+        if (pullStartRef.current === null) return;
+        const shouldRefresh = pullDistance >= 72;
+        pullStartRef.current = null;
+        setPullDistance(0);
+        if (shouldRefresh) void refreshWorkspace();
+      }}
+      onTouchCancel={() => {
+        pullStartRef.current = null;
+        setPullDistance(0);
+      }}
+    >
       <div className="mx-auto flex max-w-6xl flex-col gap-5">
+        {(pullDistance > 0 || refreshing) && !selectedPhoto && !pendingCaptureSrc ? (
+          <div
+            className="pointer-events-none -mb-3 flex items-center justify-center gap-2 text-xs font-medium text-ink/50 transition dark:text-paper/50"
+            style={{ height: refreshing ? 28 : Math.max(18, pullDistance) }}
+          >
+            <RefreshCw className={clsx(refreshing && "animate-spin")} size={14} />
+            <span>{pullRefreshLabel}</span>
+          </div>
+        ) : null}
         <header className="sticky top-0 z-20 grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-3 py-3">
           <label
             aria-label="Open camera"
@@ -2190,9 +2232,37 @@ function PhotoViewer({
   const currentIndex = Math.max(0, photos.findIndex((item) => item.id === photo.id));
   const previousPhoto = photos.length > 1 ? photos[(currentIndex - 1 + photos.length) % photos.length] : null;
   const nextPhoto = photos.length > 1 ? photos[(currentIndex + 1) % photos.length] : null;
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  const finishSwipe = (x: number, y: number) => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start) return;
+
+    const deltaX = x - start.x;
+    const deltaY = y - start.y;
+    if (Math.abs(deltaX) < 44 || Math.abs(deltaX) < Math.abs(deltaY) * 1.35) return;
+    if (deltaX < 0 && nextPhoto) setSelectedPhotoId(nextPhoto.id);
+    if (deltaX > 0 && previousPhoto) setSelectedPhotoId(previousPhoto.id);
+  };
 
   return (
-    <div className="fixed inset-0 z-30 flex flex-col bg-ink text-paper">
+    <div
+      className="fixed inset-0 z-30 flex flex-col bg-ink text-paper"
+      onTouchStart={(event) => {
+        const touch = event.touches[0];
+        if (!touch) return;
+        swipeStartRef.current = { x: touch.clientX, y: touch.clientY };
+      }}
+      onTouchEnd={(event) => {
+        const touch = event.changedTouches[0];
+        if (!touch) return;
+        finishSwipe(touch.clientX, touch.clientY);
+      }}
+      onTouchCancel={() => {
+        swipeStartRef.current = null;
+      }}
+    >
       <div className="flex items-center justify-between px-4 py-4">
         <button onClick={() => setSelectedPhotoId(null)}>Back</button>
         <p className="text-sm">{currentIndex + 1} / {photos.length}</p>
