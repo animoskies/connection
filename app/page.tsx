@@ -496,6 +496,7 @@ export default function Home() {
   const [connectionRequests, setConnectionRequests] = useState<ConnectionRequest[]>([]);
   const [connections, setConnections] = useState<ConnectionProfile[]>([]);
   const [connectionSearchResults, setConnectionSearchResults] = useState<ConnectionProfile[]>([]);
+  const [connectionQuery, setConnectionQuery] = useState("");
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
@@ -515,8 +516,10 @@ export default function Home() {
   const [message, setMessage] = useState("");
   const [darkMode, setDarkMode] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [pendingInvite, setPendingInvite] = useState<InvitePreview | null>(null);
+  const [groupCreateSignal, setGroupCreateSignal] = useState(0);
   const notificationAreaRef = useRef<HTMLDivElement | null>(null);
   const pullStartRef = useRef<number | null>(null);
 
@@ -556,6 +559,13 @@ export default function Home() {
     if (!notificationsOpen) return;
     setNotificationsOpen(false);
   }, [activeGroupId, activeTab, pendingCaptureSrc, selectedConnectionId, selectedPhotoId]);
+
+  useEffect(() => {
+    if (activeTab === "connections") return;
+    setHeaderSearchOpen(false);
+    setConnectionQuery("");
+    setConnectionSearchResults([]);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!notificationsOpen) return;
@@ -696,6 +706,7 @@ export default function Home() {
       setConnectionRequests([]);
       setConnections([]);
       setConnectionSearchResults([]);
+      setConnectionQuery("");
       setSelectedConnectionId(null);
       setEvents([]);
       setPhotos([]);
@@ -1380,24 +1391,68 @@ export default function Home() {
             <span>{pullRefreshLabel}</span>
           </div>
         ) : null}
-        <header className="sticky top-0 z-20 grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-3 py-3">
-          <label
-            aria-label="Open camera"
-            className="grid h-11 w-11 cursor-pointer place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
-          >
-            <Plus size={30} strokeWidth={1.8} />
+        <header className="sticky top-0 z-20 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-3">
+          <div className="flex items-center gap-2">
+            {activeTab === "groups" && !activeGroupId ? (
+              <button
+                aria-label="Add group"
+                className="grid h-11 w-11 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
+                onClick={() => setGroupCreateSignal((value) => value + 1)}
+                type="button"
+              >
+                <Plus size={30} strokeWidth={1.8} />
+              </button>
+            ) : (
+              <label
+                aria-label="Open camera"
+                className="grid h-11 w-11 cursor-pointer place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
+              >
+                <Plus size={30} strokeWidth={1.8} />
+                <input
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(event) => {
+                    void handleNativePhoto(event.target.files?.[0] ?? null);
+                    event.target.value = "";
+                  }}
+                  type="file"
+                />
+              </label>
+            )}
+            {activeTab === "connections" && !selectedConnectionId ? (
+              <button
+                aria-label="Search"
+                className="grid h-11 w-11 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
+                onClick={() => {
+                  setHeaderSearchOpen((value) => {
+                    if (value) {
+                      setConnectionQuery("");
+                      setConnectionSearchResults([]);
+                    }
+                    return !value;
+                  });
+                }}
+                type="button"
+              >
+                <Search size={22} strokeWidth={1.8} />
+              </button>
+            ) : null}
+          </div>
+          {activeTab === "connections" && headerSearchOpen && !selectedConnectionId ? (
             <input
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={(event) => {
-                void handleNativePhoto(event.target.files?.[0] ?? null);
-                event.target.value = "";
-              }}
-              type="file"
+              autoCapitalize="none"
+              autoComplete="off"
+              autoCorrect="off"
+              autoFocus
+              className="h-11 min-w-0 justify-self-stretch border-b border-line bg-transparent px-1 text-base font-medium outline-none placeholder:text-ink/40 dark:border-white/15 dark:text-paper dark:placeholder:text-paper/40"
+              placeholder="Search"
+              value={connectionQuery}
+              onChange={(event) => setConnectionQuery(event.target.value)}
             />
-          </label>
-          <ConnectionLogo compact className="justify-self-center" />
+          ) : (
+            <ConnectionLogo compact className="justify-self-center" />
+          )}
           <div ref={notificationAreaRef} className="relative flex items-center justify-end gap-2">
             <button
               aria-label="Notifications"
@@ -1467,6 +1522,7 @@ export default function Home() {
           <ConnectionsView
             openPhoto={openPhoto}
             photos={connectionPhotos}
+            query={connectionQuery}
             searchResults={connectionSearchResults}
             selectedConnection={selectedConnection}
             onBack={() => setSelectedConnectionId(null)}
@@ -1481,6 +1537,7 @@ export default function Home() {
           <GroupsView
             activeGroup={activeGroup}
             activeGroupId={activeGroupId}
+            addSignal={groupCreateSignal}
             groups={groups}
             notifyGroupMembers={notifyGroupMembers}
             onOpenGroupCalendar={(groupId) => {
@@ -1606,6 +1663,7 @@ function GalleryView({
 function ConnectionsView({
   openPhoto,
   photos,
+  query,
   searchResults,
   selectedConnection,
   onBack,
@@ -1616,6 +1674,7 @@ function ConnectionsView({
 }: {
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
+  query: string;
   searchResults: ConnectionProfile[];
   selectedConnection: ConnectionProfile | null;
   onBack: () => void;
@@ -1624,7 +1683,6 @@ function ConnectionsView({
   onSearch: (query: string) => void;
   onSendRequest: (profileId: string) => void;
 }) {
-  const [query, setQuery] = useState("");
   const owners = [...new Set(photos.map((photo) => photo.ownerId))];
 
   useEffect(() => {
@@ -1676,18 +1734,6 @@ function ConnectionsView({
 
   return (
     <section className="flex flex-col gap-7">
-      <div>
-        <label className="flex items-center gap-2 border-b border-line bg-white/60 px-1 py-3 text-ink dark:border-white/15 dark:bg-transparent dark:text-paper">
-          <Search size={19} />
-          <input
-            className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-ink/40 dark:placeholder:text-paper/40"
-            placeholder="Search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
-      </div>
-
       {query.trim().length >= 2 ? (
         <section className="grid gap-3">
           {searchResults.length ? (
@@ -1786,6 +1832,7 @@ function ConnectionSearchResult({
 function GroupsView({
   activeGroup,
   activeGroupId,
+  addSignal,
   groups,
   notifyGroupMembers,
   onOpenGroupCalendar,
@@ -1799,6 +1846,7 @@ function GroupsView({
 }: {
   activeGroup: Group | null;
   activeGroupId: string | null;
+  addSignal: number;
   groups: Group[];
   notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   onOpenGroupCalendar: (groupId: string) => void;
@@ -1819,6 +1867,7 @@ function GroupsView({
       {!activeGroup ? (
         <GroupPanel
           activeGroupId={activeGroupId}
+          addSignal={addSignal}
           groups={groups}
           notifyGroupMembers={notifyGroupMembers}
           photos={photos}
@@ -2986,6 +3035,7 @@ function AccountMenu({
 function GroupPanel({
   groups,
   activeGroupId,
+  addSignal,
   notifyGroupMembers,
   photos,
   profile,
@@ -2995,6 +3045,7 @@ function GroupPanel({
 }: {
   groups: Group[];
   activeGroupId: string | null;
+  addSignal: number;
   notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   photos: PhotoItem[];
   profile: Profile;
@@ -3009,6 +3060,16 @@ function GroupPanel({
   const [inviteGroupId, setInviteGroupId] = useState<string | null>(null);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
+  const handledAddSignalRef = useRef(addSignal);
+
+  useEffect(() => {
+    if (addSignal === handledAddSignalRef.current) return;
+    handledAddSignalRef.current = addSignal;
+    setInviteGroupId(null);
+    setActionGroupId(null);
+    setEditingGroupId(null);
+    setAddOpen(true);
+  }, [addSignal]);
 
   async function createGroup(event: FormEvent) {
     event.preventDefault();
@@ -3113,24 +3174,6 @@ function GroupPanel({
 
   return (
     <section>
-      <div className="mb-5">
-        <div className="flex items-center justify-end gap-3">
-          <button
-            aria-label="Add group"
-            className="grid h-8 w-8 place-items-center text-ink/75 transition hover:text-ink dark:text-paper/75 dark:hover:text-paper"
-            onClick={() => {
-              setInviteGroupId(null);
-              setActionGroupId(null);
-              setEditingGroupId(null);
-              setAddOpen((value) => !value);
-            }}
-            type="button"
-          >
-            <Plus size={18} />
-          </button>
-        </div>
-      </div>
-
       {addOpen ? (
         <div className="fixed inset-0 z-40 flex items-end bg-black/45 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-ink sm:items-center">
           <form className="mx-auto w-full max-w-lg rounded-t-2xl border border-white/70 bg-white p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420] dark:text-paper sm:rounded-2xl" onSubmit={createGroup}>
