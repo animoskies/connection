@@ -1797,9 +1797,7 @@ function PhotoViewer({
           >
             <Avatar name={photo.owner} src={photo.ownerAvatar} />
             <div>
-              <p className={clsx("font-semibold", canOpenOwner && "underline decoration-ink/25 underline-offset-4")}>
-                {photo.owner}
-              </p>
+              <p className="font-semibold">{photo.owner}</p>
               <p className="text-sm text-ink/60">{photo.location}</p>
             </div>
           </button>
