@@ -819,7 +819,7 @@ export default function Home() {
     setRefreshing(true);
     try {
       await loadWorkspace(sessionUserId, { clearMessage: false });
-      setMessage("Latest photos, groups, invites, notifications, and calendar loaded.");
+      setMessage("Refreshed.");
     } finally {
       setRefreshing(false);
     }
@@ -1315,7 +1315,7 @@ export default function Home() {
     return calendarEvents.filter((event) => localDateTime(event, preferredTimezone).toISODate() === selectedDate);
   }, [calendarEvents, preferredTimezone, selectedDate]);
   const pullProgress = Math.min(1, pullDistance / 72);
-  const pullRefreshLabel = refreshing ? "Refreshing" : pullProgress >= 1 ? "Release to refresh" : "Pull to refresh";
+  const pullRefreshLabel = refreshing ? "Refreshing" : pullProgress >= 1 ? "Release" : "Pull to refresh";
 
   if (!hasSupabaseConfig) {
     return <ConfigScreen />;
