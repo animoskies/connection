@@ -119,6 +119,24 @@ type ShareTarget =
   | { type: "connections" }
   | { type: "group"; groupId: string };
 
+function isTransientMessage(message: string) {
+  return [
+    "Latest photos, groups, invites, and calendar loaded.",
+    "Photo posted to group.",
+    "Photo posted to connections.",
+    "Photo deleted.",
+    "Calendar event added.",
+    "Calendar event updated.",
+    "Calendar event deleted.",
+    "Profile picture updated.",
+    "Account settings updated.",
+    "Dark mode on.",
+    "Dark mode off.",
+    "Invite link copied.",
+    "Invite declined."
+  ].includes(message) || message.startsWith("Invite sent to @") || message.startsWith("Joined ");
+}
+
 function appUrl(path = "/") {
   const base = configuredAppUrl || (typeof window !== "undefined" ? window.location.origin : "");
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
@@ -283,6 +301,14 @@ export default function Home() {
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
   }, [darkMode]);
+
+  useEffect(() => {
+    if (!sessionUserId || !message || !isTransientMessage(message)) return;
+    const timeout = window.setTimeout(() => {
+      setMessage((currentMessage) => (currentMessage === message ? "" : currentMessage));
+    }, 3200);
+    return () => window.clearTimeout(timeout);
+  }, [message, sessionUserId]);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -828,6 +854,7 @@ export default function Home() {
             {accountOpen ? (
               <AccountMenu
                 darkMode={darkMode}
+                onClose={() => setAccountOpen(false)}
                 profile={profile}
                 reload={() => loadWorkspace()}
                 setDarkMode={setDarkMode}
@@ -1754,12 +1781,14 @@ function ProfilePanel({ profile }: { profile: Profile }) {
 
 function AccountMenu({
   darkMode,
+  onClose,
   profile,
   reload,
   setDarkMode,
   setMessage
 }: {
   darkMode: boolean;
+  onClose: () => void;
   profile: Profile;
   reload: WorkspaceReload;
   setDarkMode: (value: boolean) => void;
@@ -1811,8 +1840,9 @@ function AccountMenu({
       setMessage(error.message);
     } else {
       setAvatarUrl(publicUrl);
+      await reload();
       setMessage("Profile picture updated.");
-      reload();
+      onClose();
     }
 
     setBusy(false);
@@ -1837,11 +1867,19 @@ function AccountMenu({
     if (error) {
       setMessage(error.message);
     } else {
+      await reload();
       setMessage("Account settings updated.");
-      reload();
+      onClose();
     }
 
     setBusy(false);
+  }
+
+  function toggleDarkMode() {
+    const nextDarkMode = !darkMode;
+    setDarkMode(nextDarkMode);
+    setMessage(nextDarkMode ? "Dark mode on." : "Dark mode off.");
+    onClose();
   }
 
   return (
@@ -1857,7 +1895,7 @@ function AccountMenu({
         </div>
         <button
           className="flex items-center gap-2 rounded-full border border-line px-3 py-1.5 text-xs dark:border-white/15"
-          onClick={() => setDarkMode(!darkMode)}
+          onClick={toggleDarkMode}
           type="button"
         >
           {darkMode ? <Sun size={14} /> : <Moon size={14} />}
