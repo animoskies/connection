@@ -2943,7 +2943,7 @@ function GroupPanel({
   return (
     <section>
       <div className="mb-5">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-3">
           <h1 className="text-2xl font-semibold">Groups</h1>
           <button
             aria-label="Add group"
@@ -3690,7 +3690,7 @@ function EventForm({
       .toFormat("LLL d, h:mm a");
     await notifyGroupMembers(
       group.id,
-      `${profile.display_name} ${action} ${payload.title} in ${group.name}.`,
+      `${profile.display_name} ${action} an event in ${group.name}.`,
       {
         type: "calendar_event",
         action,
@@ -3698,7 +3698,7 @@ function EventForm({
         eventTitle: payload.title,
         eventDate: savedLocalDate ?? date,
         groupId: group.id,
-        summary: editingEvent ? changeSummary : `Scheduled for ${eventTime}`
+        summary: editingEvent ? `${payload.title}: ${changeSummary}` : `${payload.title} • Scheduled for ${eventTime}`
       }
     );
     onSaved(group.id, savedLocalDate ?? date);
