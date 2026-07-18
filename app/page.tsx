@@ -868,6 +868,20 @@ export default function Home() {
     setSelectedPhotoId(id);
   }
 
+  function openPhotoOwner(photo: PhotoItem) {
+    if (profile && photo.ownerId === profile.id) {
+      setSelectedPhotoId(null);
+      setActiveTab("profile");
+      return;
+    }
+
+    if (connections.some((connection) => connection.id === photo.ownerId)) {
+      setSelectedPhotoId(null);
+      setSelectedConnectionId(photo.ownerId);
+      setActiveTab("connections");
+    }
+  }
+
   async function handleNativePhoto(file: File | null) {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
@@ -1154,6 +1168,12 @@ export default function Home() {
 
       {selectedPhoto ? (
         <PhotoViewer
+          canOpenOwner={Boolean(
+            profile &&
+              (selectedPhoto.ownerId === profile.id ||
+                connections.some((connection) => connection.id === selectedPhoto.ownerId))
+          )}
+          onOpenOwner={openPhotoOwner}
           onDelete={deletePhoto}
           photo={selectedPhoto}
           photos={viewerPhotos.length ? viewerPhotos : allPhotos}
@@ -1718,11 +1738,15 @@ function PhotoStrip({
 }
 
 function PhotoViewer({
+  canOpenOwner,
+  onOpenOwner,
   onDelete,
   photo,
   photos,
   setSelectedPhotoId
 }: {
+  canOpenOwner: boolean;
+  onOpenOwner: (photo: PhotoItem) => void;
   onDelete: (photo: PhotoItem) => void;
   photo: PhotoItem;
   photos: PhotoItem[];
@@ -1762,13 +1786,23 @@ function PhotoViewer({
       </div>
       <div className="rounded-t-2xl bg-white p-4 text-ink">
         <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <button
+            className={clsx(
+              "flex items-center gap-3 text-left",
+              canOpenOwner ? "transition hover:opacity-75" : "cursor-default"
+            )}
+            disabled={!canOpenOwner}
+            onClick={() => onOpenOwner(photo)}
+            type="button"
+          >
             <Avatar name={photo.owner} src={photo.ownerAvatar} />
             <div>
-              <p className="font-semibold">{photo.owner}</p>
+              <p className={clsx("font-semibold", canOpenOwner && "underline decoration-ink/25 underline-offset-4")}>
+                {photo.owner}
+              </p>
               <p className="text-sm text-ink/60">{photo.location}</p>
             </div>
-          </div>
+          </button>
           <span />
         </div>
         <p className="text-sm text-ink/60">{photoTime(photo)}</p>
