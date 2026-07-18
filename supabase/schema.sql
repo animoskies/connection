@@ -88,6 +88,23 @@ alter table public.group_notifications
 create index if not exists group_notifications_user_id_idx on public.group_notifications(user_id, read_at, created_at desc);
 create index if not exists group_notifications_group_id_idx on public.group_notifications(group_id);
 
+create table if not exists public.connection_notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  actor_id uuid references public.profiles(id) on delete set null,
+  message text not null,
+  metadata jsonb not null default '{}'::jsonb,
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+alter table public.connection_notifications
+  add column if not exists actor_id uuid references public.profiles(id) on delete set null,
+  add column if not exists metadata jsonb not null default '{}'::jsonb,
+  add column if not exists read_at timestamptz;
+
+create index if not exists connection_notifications_user_id_idx on public.connection_notifications(user_id, read_at, created_at desc);
+
 create table if not exists public.connections (
   requester_id uuid not null references public.profiles(id) on delete cascade,
   addressee_id uuid not null references public.profiles(id) on delete cascade,
@@ -432,6 +449,59 @@ begin
 end;
 $$;
 
+drop function if exists public.pending_connection_notifications();
+
+create or replace function public.pending_connection_notifications()
+returns table (
+  id uuid,
+  actor_id uuid,
+  actor_name text,
+  actor_username text,
+  actor_avatar_url text,
+  message text,
+  metadata jsonb,
+  read_at timestamptz,
+  created_at timestamptz
+)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    cn.id,
+    cn.actor_id,
+    coalesce(p.display_name, p.username),
+    p.username,
+    p.avatar_url,
+    cn.message,
+    cn.metadata,
+    cn.read_at,
+    cn.created_at
+  from public.connection_notifications cn
+  left join public.profiles p on p.id = cn.actor_id
+  where cn.user_id = auth.uid()
+  order by cn.created_at desc;
+$$;
+
+create or replace function public.mark_connection_notification_read(notification_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  update public.connection_notifications
+  set read_at = now()
+  where id = notification_id
+    and user_id = auth.uid();
+end;
+$$;
+
 create or replace function public.connection_relationship(target_user_id uuid)
 returns text
 language sql
@@ -633,6 +703,15 @@ begin
     raise exception 'Connection request not found';
   end if;
 
+  insert into public.connection_notifications (user_id, actor_id, message, metadata)
+  select
+    requester_user_id,
+    auth.uid(),
+    coalesce(p.display_name, p.username) || ' accepted your connection request.',
+    jsonb_build_object('type', 'connection_accepted', 'profileId', auth.uid())
+  from public.profiles p
+  where p.id = auth.uid();
+
   return 'connected';
 end;
 $$;
@@ -680,6 +759,7 @@ alter table public.groups enable row level security;
 alter table public.group_members enable row level security;
 alter table public.group_invites enable row level security;
 alter table public.group_notifications enable row level security;
+alter table public.connection_notifications enable row level security;
 alter table public.connections enable row level security;
 alter table public.events enable row level security;
 alter table public.photos enable row level security;
@@ -700,6 +780,8 @@ drop policy if exists "Owners can create group invites" on public.group_invites;
 drop policy if exists "Owners can delete group invites" on public.group_invites;
 drop policy if exists "Users can read group notifications" on public.group_notifications;
 drop policy if exists "Users can update group notifications" on public.group_notifications;
+drop policy if exists "Users can read connection notifications" on public.connection_notifications;
+drop policy if exists "Users can update connection notifications" on public.connection_notifications;
 drop policy if exists "Users can read their connections" on public.connections;
 drop policy if exists "Users can request connections" on public.connections;
 drop policy if exists "Users can accept their connections" on public.connections;
@@ -834,6 +916,17 @@ create policy "Users can read group notifications"
 
 create policy "Users can update group notifications"
   on public.group_notifications for update
+  to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
+create policy "Users can read connection notifications"
+  on public.connection_notifications for select
+  to authenticated
+  using (user_id = auth.uid());
+
+create policy "Users can update connection notifications"
+  on public.connection_notifications for update
   to authenticated
   using (user_id = auth.uid())
   with check (user_id = auth.uid());

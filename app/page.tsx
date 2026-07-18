@@ -136,6 +136,18 @@ type ConnectionRequest = {
   createdAt: string;
 };
 
+type ConnectionNotification = {
+  id: string;
+  actorId: string | null;
+  actorName: string;
+  actorUsername: string;
+  actorAvatarUrl: string;
+  message: string;
+  metadata: Record<string, unknown>;
+  readAt: string | null;
+  createdAt: string;
+};
+
 type InvitePreview = {
   token: string;
   groupId: string;
@@ -181,6 +193,18 @@ type ConnectionRequestRow = {
   display_name: string;
   preferred_timezone: string;
   avatar_url: string | null;
+  created_at: string;
+};
+
+type ConnectionNotificationRow = {
+  id: string;
+  actor_id: string | null;
+  actor_name: string | null;
+  actor_username: string | null;
+  actor_avatar_url: string | null;
+  message: string;
+  metadata: Record<string, unknown> | null;
+  read_at: string | null;
   created_at: string;
 };
 
@@ -260,6 +284,20 @@ function mapGroupNotification(row: GroupNotificationRow): GroupNotification {
     groupId: row.group_id,
     groupName: row.group_name ?? "Group",
     actorName: row.actor_name ?? "Someone",
+    message: row.message,
+    metadata: row.metadata ?? {},
+    readAt: row.read_at,
+    createdAt: row.created_at
+  };
+}
+
+function mapConnectionNotification(row: ConnectionNotificationRow): ConnectionNotification {
+  return {
+    id: row.id,
+    actorId: row.actor_id,
+    actorName: row.actor_name ?? "Someone",
+    actorUsername: row.actor_username ?? "user",
+    actorAvatarUrl: row.actor_avatar_url ?? "",
     message: row.message,
     metadata: row.metadata ?? {},
     readAt: row.read_at,
@@ -507,6 +545,7 @@ export default function Home() {
   const [groupInvites, setGroupInvites] = useState<GroupInvite[]>([]);
   const [groupNotifications, setGroupNotifications] = useState<GroupNotification[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<ConnectionRequest[]>([]);
+  const [connectionNotifications, setConnectionNotifications] = useState<ConnectionNotification[]>([]);
   const [connections, setConnections] = useState<ConnectionProfile[]>([]);
   const [connectionSearchResults, setConnectionSearchResults] = useState<ConnectionProfile[]>([]);
   const [connectionQuery, setConnectionQuery] = useState("");
@@ -707,6 +746,7 @@ export default function Home() {
       setGroupInvites([]);
       setGroupNotifications([]);
       setConnectionRequests([]);
+      setConnectionNotifications([]);
       setConnections([]);
       setConnectionSearchResults([]);
       setConnectionQuery("");
@@ -841,6 +881,7 @@ export default function Home() {
     await loadGroupInvites(userId);
     await loadGroupNotifications();
     await loadConnections();
+    await loadConnectionNotifications();
     await loadConnectionRequests();
 
     setLoading(false);
@@ -894,6 +935,19 @@ export default function Home() {
     setGroupNotifications(((data ?? []) as GroupNotificationRow[]).map(mapGroupNotification));
   }
 
+  async function loadConnectionNotifications() {
+    if (!supabase) return;
+
+    const { data, error } = await supabase.rpc("pending_connection_notifications");
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setConnectionNotifications(((data ?? []) as ConnectionNotificationRow[]).map(mapConnectionNotification));
+  }
+
   async function notifyGroupMembers(groupId: string, notificationMessage: string, metadata: Record<string, unknown> = {}) {
     if (!supabase) return;
 
@@ -927,6 +981,39 @@ export default function Home() {
     );
   }
 
+  async function markConnectionNotificationRead(notificationId: string) {
+    if (!supabase) return;
+
+    const { error } = await supabase.rpc("mark_connection_notification_read", {
+      notification_id: notificationId
+    });
+
+    if (error) {
+      setMessage(`Failed to update notification. ${error.message}`);
+      return;
+    }
+
+    setConnectionNotifications((current) =>
+      current.map((notification) =>
+        notification.id === notificationId ? { ...notification, readAt: new Date().toISOString() } : notification
+      )
+    );
+  }
+
+  async function openConnectionNotification(notification: ConnectionNotification) {
+    if (!notification.readAt) {
+      await markConnectionNotificationRead(notification.id);
+    }
+
+    setNotificationsOpen(false);
+    const profileId =
+      typeof notification.metadata.profileId === "string" ? notification.metadata.profileId : notification.actorId;
+    if (!profileId) return;
+    setSelectedConnectionProfile(null);
+    setSelectedConnectionId(profileId);
+    setActiveTab("connections");
+  }
+
   async function openGroupNotification(notification: GroupNotification) {
     if (!notification.readAt) {
       await markGroupNotificationRead(notification.id);
@@ -948,7 +1035,7 @@ export default function Home() {
       return;
     }
 
-    setActiveGroupId(notification.groupId);
+    setActiveGroupId(groupId);
     setActiveTab("groups");
   }
 
@@ -1295,7 +1382,17 @@ export default function Home() {
     setPendingCaptureSrc(null);
     if (target.type === "group") {
       const group = groups.find((item) => item.id === target.groupId);
-      await notifyGroupMembers(target.groupId, `${profile.display_name} posted a photo${group ? ` in ${group.name}` : ""}.`);
+      await notifyGroupMembers(
+        target.groupId,
+        `${profile.display_name} posted a photo${group ? ` in ${group.name}` : ""}.`,
+        {
+          type: "group_photo",
+          action: "posted",
+          photoId: payload.photo.id,
+          groupId: target.groupId,
+          summary: caption.trim() || "New photo shared"
+        }
+      );
     }
     setMessage(target.type === "group" ? "Photo saved to group successfully." : "Photo saved to connections successfully.");
     setPhotoUploading(false);
@@ -1323,6 +1420,15 @@ export default function Home() {
     const remainingViewerIds = viewerPhotoIds.filter((id) => id !== photo.id);
     setViewerPhotoIds(remainingViewerIds);
     setSelectedPhotoId(remainingViewerIds[0] ?? null);
+    if (photo.groupId && profile) {
+      await notifyGroupMembers(photo.groupId, `${profile.display_name} deleted a photo from ${photo.group}.`, {
+        type: "group_photo",
+        action: "deleted",
+        photoId: photo.id,
+        groupId: photo.groupId,
+        summary: "Photo deleted"
+      });
+    }
     setMessage("Photo deleted successfully.");
   }
 
@@ -1341,7 +1447,9 @@ export default function Home() {
     calendarGroupId === "all" ? events : events.filter((event) => event.group_id === calendarGroupId);
   const calendarGroup = groups.find((group) => group.id === calendarGroupId) ?? null;
   const unreadGroupNotifications = groupNotifications.filter((notification) => !notification.readAt);
-  const notificationCount = groupInvites.length + connectionRequests.length + unreadGroupNotifications.length;
+  const unreadConnectionNotifications = connectionNotifications.filter((notification) => !notification.readAt);
+  const notificationCount =
+    groupInvites.length + connectionRequests.length + unreadGroupNotifications.length + unreadConnectionNotifications.length;
   const selectedConnection =
     connections.find((connection) => connection.id === selectedConnectionId) ??
     (selectedConnectionProfile?.id === selectedConnectionId ? selectedConnectionProfile : null);
@@ -1458,6 +1566,7 @@ export default function Home() {
                 if (!notificationsOpen) {
                   void loadGroupNotifications();
                   void loadGroupInvites(sessionUserId);
+                  void loadConnectionNotifications();
                   void loadConnectionRequests();
                 }
                 setNotificationsOpen((value) => !value);
@@ -1471,6 +1580,7 @@ export default function Home() {
             </button>
             {notificationsOpen ? (
               <NotificationCenter
+                connectionNotifications={connectionNotifications}
                 connectionRequests={connectionRequests}
                 groupNotifications={groupNotifications}
                 invites={groupInvites}
@@ -1478,6 +1588,7 @@ export default function Home() {
                 onAcceptGroup={(token) => void acceptInvite(token)}
                 onDeclineConnection={(requesterId) => void declineConnectionRequest(requesterId)}
                 onDeclineGroup={(token) => void declineInvite(token)}
+                onOpenConnectionNotification={(notification) => void openConnectionNotification(notification)}
                 onOpenGroupNotification={(notification) => void openGroupNotification(notification)}
               />
             ) : null}
@@ -2566,6 +2677,7 @@ function SharePhotoSheet({
 }
 
 function NotificationCenter({
+  connectionNotifications,
   connectionRequests,
   groupNotifications,
   invites,
@@ -2573,8 +2685,10 @@ function NotificationCenter({
   onAcceptGroup,
   onDeclineConnection,
   onDeclineGroup,
+  onOpenConnectionNotification,
   onOpenGroupNotification
 }: {
+  connectionNotifications: ConnectionNotification[];
   connectionRequests: ConnectionRequest[];
   groupNotifications: GroupNotification[];
   invites: GroupInvite[];
@@ -2582,11 +2696,13 @@ function NotificationCenter({
   onAcceptGroup: (token: string) => void;
   onDeclineConnection: (requesterId: string) => void;
   onDeclineGroup: (token: string) => void;
+  onOpenConnectionNotification: (notification: ConnectionNotification) => void;
   onOpenGroupNotification: (notification: GroupNotification) => void;
 }) {
   const unreadGroupNotifications = groupNotifications.filter((notification) => !notification.readAt);
-  const total = invites.length + connectionRequests.length + unreadGroupNotifications.length;
-  const hasHistory = Boolean(groupNotifications.length);
+  const unreadConnectionNotifications = connectionNotifications.filter((notification) => !notification.readAt);
+  const total = invites.length + connectionRequests.length + unreadGroupNotifications.length + unreadConnectionNotifications.length;
+  const hasHistory = Boolean(groupNotifications.length || connectionNotifications.length);
 
   return (
     <section className="absolute right-0 top-12 z-20 w-[min(23rem,calc(100vw-2rem))] rounded-lg border border-line bg-white p-4 text-left shadow-soft dark:border-white/15 dark:bg-[#242420]">
@@ -2622,6 +2738,30 @@ function NotificationCenter({
                   {notification.metadata.summary}
                 </p>
               ) : null}
+            </button>
+          ))}
+          {connectionNotifications.map((notification) => (
+            <button
+              key={notification.id}
+              className={clsx(
+                "rounded-lg border p-3 text-left transition hover:border-ink/25 hover:bg-white dark:border-white/15 dark:hover:border-paper/25 dark:hover:bg-[#242420]",
+                notification.readAt
+                  ? "border-line bg-white dark:bg-[#1d1d1a]"
+                  : "border-moss/40 bg-skysoft/55 dark:bg-[#202923]"
+              )}
+              onClick={() => onOpenConnectionNotification(notification)}
+              type="button"
+            >
+              <div className="flex items-center gap-3">
+                <Avatar name={notification.actorName} src={notification.actorAvatarUrl} size="sm" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">{notification.actorName}</p>
+                  <p className="mt-0.5 text-[0.68rem] uppercase tracking-[0.14em] text-ink/35 dark:text-paper/35">
+                    {notificationTime(notification.createdAt)}
+                  </p>
+                </div>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-ink/60 dark:text-paper/60">{notification.message}</p>
             </button>
           ))}
           {connectionRequests.map((request) => (
