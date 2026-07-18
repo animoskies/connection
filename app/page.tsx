@@ -790,7 +790,11 @@ export default function Home() {
     );
   }
 
-  function openGroupNotification(notification: GroupNotification) {
+  async function openGroupNotification(notification: GroupNotification) {
+    if (!notification.readAt) {
+      await markGroupNotificationRead(notification.id);
+    }
+
     const type = notification.metadata.type;
     const action = notification.metadata.action;
     const eventId = typeof notification.metadata.eventId === "string" ? notification.metadata.eventId : null;
@@ -1262,8 +1266,7 @@ export default function Home() {
                 onAcceptGroup={(token) => void acceptInvite(token)}
                 onDeclineConnection={(requesterId) => void declineConnectionRequest(requesterId)}
                 onDeclineGroup={(token) => void declineInvite(token)}
-                onOpenGroupNotification={openGroupNotification}
-                onReadGroupNotification={(notificationId) => void markGroupNotificationRead(notificationId)}
+                onOpenGroupNotification={(notification) => void openGroupNotification(notification)}
               />
             ) : null}
             <label
@@ -2225,8 +2228,7 @@ function NotificationCenter({
   onAcceptGroup,
   onDeclineConnection,
   onDeclineGroup,
-  onOpenGroupNotification,
-  onReadGroupNotification
+  onOpenGroupNotification
 }: {
   connectionRequests: ConnectionRequest[];
   groupNotifications: GroupNotification[];
@@ -2236,7 +2238,6 @@ function NotificationCenter({
   onDeclineConnection: (requesterId: string) => void;
   onDeclineGroup: (token: string) => void;
   onOpenGroupNotification: (notification: GroupNotification) => void;
-  onReadGroupNotification: (notificationId: string) => void;
 }) {
   const unreadGroupNotifications = groupNotifications.filter((notification) => !notification.readAt);
   const total = invites.length + connectionRequests.length + unreadGroupNotifications.length;
@@ -2251,7 +2252,12 @@ function NotificationCenter({
       {total || hasHistory ? (
         <div className="grid gap-3">
           {groupNotifications.map((notification) => (
-            <article key={notification.id} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
+            <button
+              key={notification.id}
+              className="rounded-lg border border-line bg-paper p-3 text-left transition hover:border-ink/25 hover:bg-white dark:border-white/15 dark:bg-[#1d1d1a] dark:hover:border-paper/25 dark:hover:bg-[#242420]"
+              onClick={() => onOpenGroupNotification(notification)}
+              type="button"
+            >
               <div className="flex items-start justify-between gap-2">
                 <p className="text-sm font-semibold">{notification.groupName}</p>
                 {notification.readAt ? <span className="text-[0.68rem] uppercase tracking-[0.16em] text-ink/35 dark:text-paper/35">Read</span> : null}
@@ -2262,24 +2268,7 @@ function NotificationCenter({
                   {notification.metadata.summary}
                 </p>
               ) : null}
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <button
-                  className="rounded-full bg-ink px-3 py-2 text-sm font-medium text-paper dark:bg-paper dark:text-ink"
-                  onClick={() => onOpenGroupNotification(notification)}
-                  type="button"
-                >
-                  Open
-                </button>
-                <button
-                  className="rounded-full border border-line px-3 py-2 text-sm font-medium disabled:opacity-35 dark:border-white/15"
-                  disabled={Boolean(notification.readAt)}
-                  onClick={() => onReadGroupNotification(notification.id)}
-                  type="button"
-                >
-                  Mark read
-                </button>
-              </div>
-            </article>
+            </button>
           ))}
           {connectionRequests.map((request) => (
             <article key={request.requesterId} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
