@@ -1311,7 +1311,7 @@ export default function Home() {
   return (
     <main className="min-h-screen px-4 pb-24 pt-5 text-ink dark:text-paper sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-6xl flex-col gap-5">
-        <header className="sticky top-0 z-20 grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-3 bg-paper/95 py-3 backdrop-blur dark:bg-[#161613]/95">
+        <header className="sticky top-0 z-20 grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-3 py-3">
           <label
             aria-label="Open camera"
             className="grid h-11 w-11 cursor-pointer place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
