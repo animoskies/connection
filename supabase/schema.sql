@@ -78,6 +78,9 @@ create table if not exists public.connections (
   check (requester_id <> addressee_id)
 );
 
+create unique index if not exists connections_unique_pair_idx
+  on public.connections (least(requester_id, addressee_id), greatest(requester_id, addressee_id));
+
 create table if not exists public.events (
   id uuid primary key default gen_random_uuid(),
   group_id uuid not null references public.groups(id) on delete cascade,
@@ -333,6 +336,249 @@ as $$
     and gi.accepted_at is null
     and gi.declined_at is null
   order by gi.created_at desc;
+$$;
+
+create or replace function public.connection_relationship(target_user_id uuid)
+returns text
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select case
+    when auth.uid() is null then 'none'
+    when target_user_id = auth.uid() then 'self'
+    when exists (
+      select 1
+      from public.connections c
+      where c.status = 'accepted'
+        and (
+          (c.requester_id = auth.uid() and c.addressee_id = target_user_id)
+          or (c.requester_id = target_user_id and c.addressee_id = auth.uid())
+        )
+    ) then 'connected'
+    when exists (
+      select 1
+      from public.connections c
+      where c.status = 'pending'
+        and c.requester_id = auth.uid()
+        and c.addressee_id = target_user_id
+    ) then 'pending_sent'
+    when exists (
+      select 1
+      from public.connections c
+      where c.status = 'pending'
+        and c.requester_id = target_user_id
+        and c.addressee_id = auth.uid()
+    ) then 'pending_received'
+    else 'none'
+  end;
+$$;
+
+create or replace function public.search_profiles(search_text text)
+returns table (
+  id uuid,
+  username text,
+  display_name text,
+  preferred_timezone text,
+  avatar_url text,
+  relationship text
+)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    p.id,
+    p.username,
+    p.display_name,
+    p.preferred_timezone,
+    p.avatar_url,
+    public.connection_relationship(p.id)
+  from public.profiles p
+  where auth.uid() is not null
+    and p.id <> auth.uid()
+    and length(trim(search_text)) >= 2
+    and (
+      p.username ilike '%' || trim(search_text) || '%'
+      or p.display_name ilike '%' || trim(search_text) || '%'
+    )
+  order by
+    case when p.username ilike trim(search_text) || '%' then 0 else 1 end,
+    p.username
+  limit 12;
+$$;
+
+create or replace function public.my_connections()
+returns table (
+  id uuid,
+  username text,
+  display_name text,
+  preferred_timezone text,
+  avatar_url text,
+  relationship text,
+  connected_at timestamptz
+)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    p.id,
+    p.username,
+    p.display_name,
+    p.preferred_timezone,
+    p.avatar_url,
+    'connected'::text,
+    c.created_at
+  from public.connections c
+  join public.profiles p
+    on p.id = case
+      when c.requester_id = auth.uid() then c.addressee_id
+      else c.requester_id
+    end
+  where auth.uid() is not null
+    and c.status = 'accepted'
+    and (c.requester_id = auth.uid() or c.addressee_id = auth.uid())
+  order by p.display_name, p.username;
+$$;
+
+create or replace function public.pending_connection_requests()
+returns table (
+  requester_id uuid,
+  username text,
+  display_name text,
+  preferred_timezone text,
+  avatar_url text,
+  created_at timestamptz
+)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    p.id,
+    p.username,
+    p.display_name,
+    p.preferred_timezone,
+    p.avatar_url,
+    c.created_at
+  from public.connections c
+  join public.profiles p on p.id = c.requester_id
+  where c.addressee_id = auth.uid()
+    and c.status = 'pending'
+  order by c.created_at desc;
+$$;
+
+create or replace function public.send_connection_request(target_user_id uuid)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  existing public.connections;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  if target_user_id = auth.uid() then
+    raise exception 'You cannot connect with yourself';
+  end if;
+
+  select * into existing
+  from public.connections c
+  where (c.requester_id = auth.uid() and c.addressee_id = target_user_id)
+     or (c.requester_id = target_user_id and c.addressee_id = auth.uid())
+  limit 1;
+
+  if existing.status = 'accepted' then
+    return 'connected';
+  end if;
+
+  if existing.status = 'pending' and existing.requester_id = auth.uid() then
+    return 'pending_sent';
+  end if;
+
+  if existing.status = 'pending' and existing.addressee_id = auth.uid() then
+    update public.connections
+    set status = 'accepted'
+    where requester_id = target_user_id and addressee_id = auth.uid();
+    return 'connected';
+  end if;
+
+  insert into public.connections (requester_id, addressee_id, status)
+  values (auth.uid(), target_user_id, 'pending');
+
+  return 'pending_sent';
+end;
+$$;
+
+create or replace function public.accept_connection_request(requester_user_id uuid)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  update public.connections
+  set status = 'accepted'
+  where requester_id = requester_user_id
+    and addressee_id = auth.uid()
+    and status = 'pending';
+
+  if not found then
+    raise exception 'Connection request not found';
+  end if;
+
+  return 'connected';
+end;
+$$;
+
+create or replace function public.decline_connection_request(requester_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  delete from public.connections
+  where requester_id = requester_user_id
+    and addressee_id = auth.uid()
+    and status = 'pending';
+end;
+$$;
+
+create or replace function public.remove_connection(target_user_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  delete from public.connections
+  where status = 'accepted'
+    and (
+      (requester_id = auth.uid() and addressee_id = target_user_id)
+      or (requester_id = target_user_id and addressee_id = auth.uid())
+    );
+end;
 $$;
 
 alter table public.profiles enable row level security;

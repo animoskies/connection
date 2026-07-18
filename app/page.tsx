@@ -89,6 +89,27 @@ type GroupInvite = {
   createdAt: string;
 };
 
+type ConnectionRelationship = "none" | "pending_sent" | "pending_received" | "connected" | "self";
+
+type ConnectionProfile = {
+  id: string;
+  username: string;
+  displayName: string;
+  preferredTimezone: string;
+  avatarUrl: string;
+  relationship: ConnectionRelationship;
+  connectedAt?: string;
+};
+
+type ConnectionRequest = {
+  requesterId: string;
+  username: string;
+  displayName: string;
+  preferredTimezone: string;
+  avatarUrl: string;
+  createdAt: string;
+};
+
 type InvitePreview = {
   token: string;
   groupId: string;
@@ -104,6 +125,25 @@ type PendingGroupInviteRow = {
   group_name: string | null;
   role: "owner" | "editor" | "viewer";
   inviter_name: string | null;
+  created_at: string;
+};
+
+type ConnectionProfileRow = {
+  id: string;
+  username: string;
+  display_name: string;
+  preferred_timezone: string;
+  avatar_url: string | null;
+  relationship: ConnectionRelationship;
+  connected_at?: string;
+};
+
+type ConnectionRequestRow = {
+  requester_id: string;
+  username: string;
+  display_name: string;
+  preferred_timezone: string;
+  avatar_url: string | null;
   created_at: string;
 };
 
@@ -125,6 +165,10 @@ function isTransientMessage(message: string) {
     "Photo posted to group.",
     "Photo posted to connections.",
     "Photo deleted.",
+    "Connection request sent.",
+    "Connection request accepted.",
+    "Connection request declined.",
+    "Connection removed.",
     "Calendar event added.",
     "Calendar event updated.",
     "Calendar event deleted.",
@@ -135,6 +179,29 @@ function isTransientMessage(message: string) {
     "Invite link copied.",
     "Invite declined."
   ].includes(message) || message.startsWith("Invite sent to @") || message.startsWith("Joined ");
+}
+
+function mapConnectionProfile(row: ConnectionProfileRow): ConnectionProfile {
+  return {
+    id: row.id,
+    username: row.username,
+    displayName: row.display_name,
+    preferredTimezone: row.preferred_timezone,
+    avatarUrl: row.avatar_url ?? "",
+    relationship: row.relationship,
+    connectedAt: row.connected_at
+  };
+}
+
+function mapConnectionRequest(row: ConnectionRequestRow): ConnectionRequest {
+  return {
+    requesterId: row.requester_id,
+    username: row.username,
+    displayName: row.display_name,
+    preferredTimezone: row.preferred_timezone,
+    avatarUrl: row.avatar_url ?? "",
+    createdAt: row.created_at
+  };
 }
 
 function appUrl(path = "/") {
@@ -279,6 +346,10 @@ export default function Home() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupInvites, setGroupInvites] = useState<GroupInvite[]>([]);
+  const [connectionRequests, setConnectionRequests] = useState<ConnectionRequest[]>([]);
+  const [connections, setConnections] = useState<ConnectionProfile[]>([]);
+  const [connectionSearchResults, setConnectionSearchResults] = useState<ConnectionProfile[]>([]);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
@@ -429,6 +500,10 @@ export default function Home() {
       setProfile(null);
       setGroups([]);
       setGroupInvites([]);
+      setConnectionRequests([]);
+      setConnections([]);
+      setConnectionSearchResults([]);
+      setSelectedConnectionId(null);
       setEvents([]);
       setPhotos([]);
       return;
@@ -532,6 +607,8 @@ export default function Home() {
 
     await loadPhotos();
     await loadGroupInvites(userId);
+    await loadConnections();
+    await loadConnectionRequests();
 
     setLoading(false);
   }
@@ -570,6 +647,128 @@ export default function Home() {
         } as GroupInvite;
       })
     );
+  }
+
+  async function loadConnections() {
+    if (!supabase) return;
+    const { data, error } = await supabase.rpc("my_connections");
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    const loadedConnections = ((data ?? []) as ConnectionProfileRow[]).map(mapConnectionProfile);
+    setConnections(loadedConnections);
+    setSelectedConnectionId((currentId) =>
+      currentId && loadedConnections.some((connection) => connection.id === currentId) ? currentId : null
+    );
+  }
+
+  async function loadConnectionRequests() {
+    if (!supabase) return;
+    const { data, error } = await supabase.rpc("pending_connection_requests");
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setConnectionRequests(((data ?? []) as ConnectionRequestRow[]).map(mapConnectionRequest));
+  }
+
+  async function searchConnections(query: string) {
+    if (!supabase || query.trim().length < 2) {
+      setConnectionSearchResults([]);
+      return;
+    }
+
+    const { data, error } = await supabase.rpc("search_profiles", {
+      search_text: query
+    });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setConnectionSearchResults(((data ?? []) as ConnectionProfileRow[]).map(mapConnectionProfile));
+  }
+
+  async function sendConnectionRequest(targetUserId: string) {
+    if (!supabase) return;
+    setMessage("");
+    const { error } = await supabase.rpc("send_connection_request", {
+      target_user_id: targetUserId
+    });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setConnectionSearchResults((current) =>
+      current.map((result) =>
+        result.id === targetUserId ? { ...result, relationship: "pending_sent" } : result
+      )
+    );
+    await loadConnections();
+    await loadConnectionRequests();
+    await loadPhotos();
+    setMessage("Connection request sent.");
+  }
+
+  async function acceptConnectionRequest(requesterUserId: string) {
+    if (!supabase) return;
+    setMessage("");
+    const { error } = await supabase.rpc("accept_connection_request", {
+      requester_user_id: requesterUserId
+    });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setNotificationsOpen(false);
+    await loadConnections();
+    await loadConnectionRequests();
+    await loadPhotos();
+    setMessage("Connection request accepted.");
+  }
+
+  async function declineConnectionRequest(requesterUserId: string) {
+    if (!supabase) return;
+    setMessage("");
+    const { error } = await supabase.rpc("decline_connection_request", {
+      requester_user_id: requesterUserId
+    });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setConnectionRequests((current) => current.filter((request) => request.requesterId !== requesterUserId));
+    setMessage("Connection request declined.");
+  }
+
+  async function removeConnection(targetUserId: string) {
+    if (!supabase) return;
+    setMessage("");
+    const { error } = await supabase.rpc("remove_connection", {
+      target_user_id: targetUserId
+    });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setSelectedConnectionId(null);
+    await loadConnections();
+    await loadPhotos();
+    setMessage("Connection removed.");
   }
 
   async function preparePendingInvitePrompt() {
@@ -788,6 +987,8 @@ export default function Home() {
   const calendarEvents =
     calendarGroupId === "all" ? events : events.filter((event) => event.group_id === calendarGroupId);
   const calendarGroup = groups.find((group) => group.id === calendarGroupId) ?? null;
+  const notificationCount = groupInvites.length + connectionRequests.length;
+  const selectedConnection = connections.find((connection) => connection.id === selectedConnectionId) ?? null;
   const selectedDayEvents = useMemo(() => {
     return calendarEvents.filter((event) => localDateTime(event, preferredTimezone).toISODate() === selectedDate);
   }, [calendarEvents, preferredTimezone, selectedDate]);
@@ -837,15 +1038,18 @@ export default function Home() {
               type="button"
             >
               <Bell size={18} />
-              {groupInvites.length ? (
+              {notificationCount ? (
                 <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-rust" />
               ) : null}
             </button>
             {notificationsOpen ? (
               <NotificationCenter
+                connectionRequests={connectionRequests}
                 invites={groupInvites}
-                onAccept={(token) => void acceptInvite(token)}
-                onDecline={(token) => void declineInvite(token)}
+                onAcceptConnection={(requesterId) => void acceptConnectionRequest(requesterId)}
+                onAcceptGroup={(token) => void acceptInvite(token)}
+                onDeclineConnection={(requesterId) => void declineConnectionRequest(requesterId)}
+                onDeclineGroup={(token) => void declineInvite(token)}
               />
             ) : null}
             <label
@@ -895,7 +1099,18 @@ export default function Home() {
         ) : null}
 
         {activeTab === "connections" ? (
-          <ConnectionsView openPhoto={openPhoto} photos={connectionPhotos} />
+          <ConnectionsView
+            connections={connections}
+            openPhoto={openPhoto}
+            photos={connectionPhotos}
+            searchResults={connectionSearchResults}
+            selectedConnection={selectedConnection}
+            onBack={() => setSelectedConnectionId(null)}
+            onOpenProfile={setSelectedConnectionId}
+            onRemoveConnection={(profileId) => void removeConnection(profileId)}
+            onSearch={(query) => void searchConnections(query)}
+            onSendRequest={(profileId) => void sendConnectionRequest(profileId)}
+          />
         ) : null}
 
         {activeTab === "groups" ? (
@@ -988,33 +1203,148 @@ function GalleryView({
 }
 
 function ConnectionsView({
+  connections,
   openPhoto,
-  photos
+  photos,
+  searchResults,
+  selectedConnection,
+  onBack,
+  onOpenProfile,
+  onRemoveConnection,
+  onSearch,
+  onSendRequest
 }: {
+  connections: ConnectionProfile[];
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
+  searchResults: ConnectionProfile[];
+  selectedConnection: ConnectionProfile | null;
+  onBack: () => void;
+  onOpenProfile: (profileId: string) => void;
+  onRemoveConnection: (profileId: string) => void;
+  onSearch: (query: string) => void;
+  onSendRequest: (profileId: string) => void;
 }) {
+  const [query, setQuery] = useState("");
   const owners = [...new Set(photos.map((photo) => photo.ownerId))];
 
-  if (!photos.length) {
-    return <EmptyPanel title="No connections yet" body="Shared photos will appear here grouped by person." />;
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      void onSearch(query);
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [query]);
+
+  if (selectedConnection) {
+    const profilePhotos = photos.filter((photo) => photo.ownerId === selectedConnection.id);
+    return (
+      <section className="flex flex-col gap-6">
+        <div className="flex items-center justify-between gap-3">
+          <button className="grid h-10 w-10 place-items-center" onClick={onBack} type="button">
+            <ArrowLeft size={21} />
+          </button>
+          <button
+            className="rounded-full border border-line px-3 py-1.5 text-xs text-ink/65 dark:border-white/15 dark:text-paper/65"
+            onClick={() => onRemoveConnection(selectedConnection.id)}
+            type="button"
+          >
+            Remove
+          </button>
+        </div>
+        <section className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
+          <div className="flex items-center gap-4">
+            <Avatar name={selectedConnection.displayName} src={selectedConnection.avatarUrl} size="lg" />
+            <div className="min-w-0">
+              <h1 className="truncate text-2xl font-semibold">{selectedConnection.displayName}</h1>
+              <p className="text-sm text-ink/55 dark:text-paper/55">@{selectedConnection.username}</p>
+              <p className="mt-2 text-xs text-ink/45 dark:text-paper/45">{selectedConnection.preferredTimezone}</p>
+            </div>
+          </div>
+        </section>
+        {profilePhotos.length ? (
+          <PhotoSection
+            label={`${selectedConnection.displayName}'s photos`}
+            openPhoto={openPhoto}
+            photos={profilePhotos}
+            sourcePhotos={profilePhotos}
+          />
+        ) : (
+          <EmptyPanel title="No shared photos yet" body="Connection photos they post will appear here." />
+        )}
+      </section>
+    );
   }
 
   return (
     <section className="flex flex-col gap-7">
-      <div className="flex items-center justify-between">
+      <div>
         <h1 className="text-2xl font-semibold">Connections</h1>
-        <button className="grid h-10 w-10 place-items-center text-ink dark:text-paper" type="button">
-          <Search size={22} />
-        </button>
+        <label className="mt-4 flex items-center gap-2 border-b border-line bg-white/60 px-1 py-3 text-ink dark:border-white/15 dark:bg-transparent dark:text-paper">
+          <Search size={19} />
+          <input
+            className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-ink/40 dark:placeholder:text-paper/40"
+            placeholder="Search username"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </label>
       </div>
 
+      {query.trim().length >= 2 ? (
+        <section className="grid gap-3">
+          {searchResults.length ? (
+            searchResults.map((result) => (
+              <ConnectionSearchResult
+                key={result.id}
+                profile={result}
+                onOpenProfile={onOpenProfile}
+                onSendRequest={onSendRequest}
+              />
+            ))
+          ) : (
+            <p className="text-sm text-ink/55 dark:text-paper/55">No matching usernames yet.</p>
+          )}
+        </section>
+      ) : null}
+
+      {connections.length ? (
+        <section>
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.16em] text-ink/45 dark:text-paper/45">
+            Your people
+          </h2>
+          <div className="grid gap-3">
+            {connections.map((connection) => (
+              <button
+                key={connection.id}
+                className="flex items-center gap-3 rounded-lg border border-white/70 bg-white/85 p-3 text-left shadow-sm dark:border-white/15 dark:bg-[#242420]"
+                onClick={() => onOpenProfile(connection.id)}
+                type="button"
+              >
+                <Avatar name={connection.displayName} src={connection.avatarUrl} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold">{connection.displayName}</p>
+                  <p className="truncate text-sm text-ink/55 dark:text-paper/55">@{connection.username}</p>
+                </div>
+                <span className="text-xs text-ink/45 dark:text-paper/45">View</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : (
+        <EmptyPanel title="No connections yet" body="Search a username and send your first request." />
+      )}
+
+      {photos.length ? (
+        <section className="flex flex-col gap-7">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-ink/45 dark:text-paper/45">
+            Shared feed
+          </h2>
       {owners.map((owner) => {
         const ownerPhotos = photos.filter((photo) => photo.ownerId === owner);
         const ownerName = ownerPhotos[0]?.owner ?? "Someone";
         return (
-          <section key={owner}>
-            <div className="mb-3 flex items-center gap-3">
+            <section key={owner}>
+              <button className="mb-3 flex items-center gap-3 text-left" onClick={() => onOpenProfile(owner)} type="button">
               <Avatar name={ownerName} src={ownerPhotos[0]?.ownerAvatar} />
               <div>
                 <h2 className="font-semibold">{ownerName}</h2>
@@ -1022,12 +1352,64 @@ function ConnectionsView({
                   {photoTime(ownerPhotos[0])} • {ownerPhotos.length} photos
                 </p>
               </div>
-            </div>
+              </button>
             <PhotoStrip openPhoto={openPhoto} photos={ownerPhotos} sourcePhotos={ownerPhotos} />
           </section>
         );
       })}
+        </section>
+      ) : null}
     </section>
+  );
+}
+
+function ConnectionSearchResult({
+  profile,
+  onOpenProfile,
+  onSendRequest
+}: {
+  profile: ConnectionProfile;
+  onOpenProfile: (profileId: string) => void;
+  onSendRequest: (profileId: string) => void;
+}) {
+  const canOpen = profile.relationship === "connected";
+  const actionLabel =
+    profile.relationship === "connected"
+      ? "View"
+      : profile.relationship === "pending_sent"
+        ? "Requested"
+        : profile.relationship === "pending_received"
+          ? "Accept in notifications"
+          : "Connect";
+
+  return (
+    <article className="flex items-center gap-3 rounded-lg border border-white/70 bg-white/85 p-3 shadow-sm dark:border-white/15 dark:bg-[#242420]">
+      <button
+        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        disabled={!canOpen}
+        onClick={() => onOpenProfile(profile.id)}
+        type="button"
+      >
+        <Avatar name={profile.displayName} src={profile.avatarUrl} />
+        <div className="min-w-0">
+          <p className="truncate font-semibold">{profile.displayName}</p>
+          <p className="truncate text-sm text-ink/55 dark:text-paper/55">@{profile.username}</p>
+        </div>
+      </button>
+      <button
+        className={clsx(
+          "rounded-full px-3 py-1.5 text-xs font-medium",
+          profile.relationship === "none"
+            ? "bg-ink text-paper dark:bg-paper dark:text-ink"
+            : "border border-line text-ink/60 dark:border-white/15 dark:text-paper/60"
+        )}
+        disabled={profile.relationship === "pending_sent" || profile.relationship === "pending_received"}
+        onClick={() => (profile.relationship === "connected" ? onOpenProfile(profile.id) : onSendRequest(profile.id))}
+        type="button"
+      >
+        {actionLabel}
+      </button>
+    </article>
   );
 }
 
@@ -1478,22 +1860,57 @@ function SharePhotoSheet({
 }
 
 function NotificationCenter({
+  connectionRequests,
   invites,
-  onAccept,
-  onDecline
+  onAcceptConnection,
+  onAcceptGroup,
+  onDeclineConnection,
+  onDeclineGroup
 }: {
+  connectionRequests: ConnectionRequest[];
   invites: GroupInvite[];
-  onAccept: (token: string) => void;
-  onDecline: (token: string) => void;
+  onAcceptConnection: (requesterId: string) => void;
+  onAcceptGroup: (token: string) => void;
+  onDeclineConnection: (requesterId: string) => void;
+  onDeclineGroup: (token: string) => void;
 }) {
+  const total = invites.length + connectionRequests.length;
+
   return (
     <section className="absolute right-0 top-12 z-20 w-[min(23rem,calc(100vw-2rem))] rounded-lg border border-line bg-white p-4 text-left shadow-soft dark:border-white/15 dark:bg-[#242420]">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-semibold">Notifications</h2>
-        {invites.length ? <span className="text-xs text-ink/55 dark:text-paper/55">{invites.length} pending</span> : null}
+        {total ? <span className="text-xs text-ink/55 dark:text-paper/55">{total} pending</span> : null}
       </div>
-      {invites.length ? (
+      {total ? (
         <div className="grid gap-3">
+          {connectionRequests.map((request) => (
+            <article key={request.requesterId} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
+              <div className="flex items-center gap-3">
+                <Avatar name={request.displayName} src={request.avatarUrl} size="sm" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">{request.displayName}</p>
+                  <p className="truncate text-xs text-ink/60 dark:text-paper/60">@{request.username} wants to connect.</p>
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  className="rounded-full bg-ink px-3 py-2 text-sm font-medium text-paper dark:bg-paper dark:text-ink"
+                  onClick={() => onAcceptConnection(request.requesterId)}
+                  type="button"
+                >
+                  Accept
+                </button>
+                <button
+                  className="rounded-full border border-line px-3 py-2 text-sm font-medium dark:border-white/15"
+                  onClick={() => onDeclineConnection(request.requesterId)}
+                  type="button"
+                >
+                  Decline
+                </button>
+              </div>
+            </article>
+          ))}
           {invites.map((invite) => (
             <article key={invite.id} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
               <p className="text-sm font-semibold">{invite.groupName}</p>
@@ -1503,14 +1920,14 @@ function NotificationCenter({
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
                   className="rounded-full bg-ink px-3 py-2 text-sm font-medium text-paper dark:bg-paper dark:text-ink"
-                  onClick={() => onAccept(invite.token)}
+                  onClick={() => onAcceptGroup(invite.token)}
                   type="button"
                 >
                   Accept
                 </button>
                 <button
                   className="rounded-full border border-line px-3 py-2 text-sm font-medium dark:border-white/15"
-                  onClick={() => onDecline(invite.token)}
+                  onClick={() => onDeclineGroup(invite.token)}
                   type="button"
                 >
                   Decline
