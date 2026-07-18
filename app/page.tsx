@@ -2739,7 +2739,7 @@ function ConnectionLogo({ className, compact = false }: { className?: string; co
     <div
       className={clsx(
         "select-none text-center font-semibold lowercase tracking-normal text-ink dark:text-paper",
-        compact ? "text-xl leading-none sm:text-2xl" : "text-3xl",
+        compact ? "text-2xl leading-none sm:text-3xl" : "text-3xl",
         className
       )}
       aria-label="Connection"
