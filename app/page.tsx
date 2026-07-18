@@ -217,6 +217,21 @@ const memoryPhotoClass = "h-full w-full object-cover";
 const nativePhotoMaxSize = 1280;
 const nativePhotoQuality = 0.72;
 const avatarPhotoSize = 320;
+const specialLovePhotoId = "4ebe631a-e43a-4eef-a3da-73f328df44eb";
+const loveHeartParticles = [
+  { left: 8, delay: 0.05, duration: 2.8, size: 1.25 },
+  { left: 14, delay: 0.45, duration: 3.1, size: 1.7 },
+  { left: 21, delay: 0.2, duration: 2.7, size: 1.35 },
+  { left: 29, delay: 0.8, duration: 3.3, size: 1.55 },
+  { left: 36, delay: 0.1, duration: 2.9, size: 1.9 },
+  { left: 43, delay: 0.55, duration: 3.2, size: 1.3 },
+  { left: 51, delay: 0.25, duration: 2.8, size: 1.65 },
+  { left: 58, delay: 0.7, duration: 3.4, size: 1.4 },
+  { left: 66, delay: 0.15, duration: 3, size: 1.85 },
+  { left: 73, delay: 0.5, duration: 2.7, size: 1.25 },
+  { left: 81, delay: 0.9, duration: 3.2, size: 1.55 },
+  { left: 89, delay: 0.3, duration: 2.9, size: 1.75 }
+];
 type OpenPhoto = (id: string, photos: PhotoItem[]) => void;
 type WorkspaceReload = () => void | Promise<void>;
 type ShareTarget =
@@ -2486,6 +2501,7 @@ function PhotoViewer({
   const currentIndex = Math.max(0, photos.findIndex((item) => item.id === photo.id));
   const previousPhoto = photos.length > 1 ? photos[(currentIndex - 1 + photos.length) % photos.length] : null;
   const nextPhoto = photos.length > 1 ? photos[(currentIndex + 1) % photos.length] : null;
+  const showLoveBurst = photo.id === specialLovePhotoId;
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const finishSwipe = (x: number, y: number) => {
@@ -2535,6 +2551,24 @@ function PhotoViewer({
       </div>
       <div className="relative min-h-0 flex-1">
         <img alt={photo.title} className={memoryPhotoClass} src={photo.src} />
+        {showLoveBurst ? (
+          <div key={photo.id} className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+            {loveHeartParticles.map((heart, index) => (
+              <span
+                key={`${photo.id}-${index}`}
+                className="love-heart"
+                style={{
+                  left: `${heart.left}%`,
+                  animationDelay: `${heart.delay}s`,
+                  animationDuration: `${heart.duration}s`,
+                  fontSize: `${heart.size}rem`
+                }}
+              >
+                ❤️
+              </span>
+            ))}
+          </div>
+        ) : null}
         {previousPhoto ? (
           <button
             aria-label="Previous photo"

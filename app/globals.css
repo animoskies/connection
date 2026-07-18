@@ -58,6 +58,35 @@ select {
   padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
 }
 
+.love-heart {
+  position: absolute;
+  bottom: -2.5rem;
+  transform: translateX(-50%) scale(0.85);
+  animation-name: love-heart-rise;
+  animation-timing-function: cubic-bezier(0.2, 0.68, 0.22, 1);
+  animation-fill-mode: forwards;
+  filter: drop-shadow(0 0.35rem 0.65rem rgba(0, 0, 0, 0.22));
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+@keyframes love-heart-rise {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.72) rotate(-8deg);
+  }
+  12% {
+    opacity: 0.95;
+  }
+  72% {
+    opacity: 0.88;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + 1.8rem), -82vh) scale(1.25) rotate(10deg);
+  }
+}
+
 body.keyboard-open .app-bottom-nav {
   display: none;
 }
