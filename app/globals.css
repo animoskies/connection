@@ -4,12 +4,12 @@
 
 :root {
   color-scheme: light;
-  background: #f4f1ea;
+  background: #f8f7f4;
 }
 
 html.dark {
   color-scheme: dark;
-  background: #20201c;
+  background: #151515;
 }
 
 html {
@@ -26,8 +26,8 @@ body {
   margin: 0;
   min-height: 100dvh;
   background:
-    linear-gradient(180deg, #faf8f2 0%, #f4f1ea 42%, #ebe6dc 100%);
-  color: #181715;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(248, 247, 244, 0.9) 34%, #efede7 100%);
+  color: #151515;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -35,12 +35,12 @@ body {
 
 html.dark body {
   background:
-    linear-gradient(180deg, #20201c 0%, #23231f 48%, #2b2a25 100%);
-  color: #f4f1ea;
+    linear-gradient(180deg, #151515 0%, #1d1d1a 54%, #242420 100%);
+  color: #f8f7f4;
 }
 
 ::selection {
-  background: rgba(101, 116, 90, 0.24);
+  background: rgba(143, 200, 247, 0.34);
 }
 
 button,
