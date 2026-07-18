@@ -1401,15 +1401,6 @@ export default function Home() {
           <ConnectionLogo compact className="justify-self-center" />
           <div ref={notificationAreaRef} className="relative flex items-center justify-end gap-2">
             <button
-              aria-label="Refresh latest data"
-              className="grid h-11 w-11 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
-              disabled={refreshing}
-              onClick={() => void refreshWorkspace()}
-              type="button"
-            >
-              <RefreshCw className={clsx(refreshing && "animate-spin")} size={18} />
-            </button>
-            <button
               aria-label="Notifications"
               className="relative grid h-11 w-11 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
               onClick={() => {
