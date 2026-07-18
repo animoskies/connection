@@ -43,6 +43,8 @@ type Group = {
   id: string;
   name: string;
   owner_id: string;
+  owner_name: string;
+  owner_username: string;
   role: "owner" | "editor" | "viewer";
   member_count: number;
 };
@@ -203,7 +205,7 @@ function isTransientMessage(message: string) {
     "Dark mode off.",
     "Invite link copied.",
     "Invite declined."
-  ].includes(message) || message.startsWith("Invite sent to @") || message.startsWith("Joined ");
+  ].includes(message) || message.startsWith("Invite sent to @") || message.startsWith("Joined ") || message.startsWith("Only admin @");
 }
 
 function mapConnectionProfile(row: ConnectionProfileRow): ConnectionProfile {
@@ -578,7 +580,7 @@ export default function Home() {
 
     const { data: membershipData, error: membershipError } = await supabase
       .from("group_members")
-      .select("role, groups(id, name, owner_id)")
+      .select("role, groups(id, name, owner_id, profiles!groups_owner_id_fkey(username, display_name))")
       .eq("user_id", userId)
       .order("created_at", { ascending: true });
 
@@ -593,12 +595,19 @@ export default function Home() {
         const group = Array.isArray(membership.groups)
           ? membership.groups[0]
           : membership.groups;
+        const ownerProfile = group
+          ? Array.isArray(group.profiles)
+            ? group.profiles[0]
+            : group.profiles
+          : null;
         return group
           ? [
               {
                 id: group.id,
                 name: group.name,
                 owner_id: group.owner_id,
+                owner_name: ownerProfile?.display_name ?? ownerProfile?.username ?? "Admin",
+                owner_username: ownerProfile?.username ?? "admin",
                 role: membership.role,
                 member_count: 1
               } as Group
@@ -2754,7 +2763,12 @@ function GroupPanel({
   }
 
   async function deleteGroup(group: Group) {
-    if (!supabase || group.role !== "owner") return;
+    if (!supabase) return;
+    if (group.role !== "owner") {
+      setMessage(`Only admin @${group.owner_username} can delete this group.`);
+      return;
+    }
+
     const confirmed = window.confirm(`Delete ${group.name}? This removes its calendar, invites, and membership for everyone.`);
     if (!confirmed) return;
     setMessage("");
@@ -2907,16 +2921,17 @@ function GroupPanel({
                         <Pencil size={17} />
                       </button>
                     ) : null}
-                    {group.role === "owner" ? (
-                      <button
-                        aria-label={`Delete ${group.name}`}
-                        className="grid h-10 w-10 place-items-center rounded-full text-ink/60 transition hover:bg-paper dark:text-paper/60 dark:hover:bg-[#1d1d1a]"
-                        onClick={() => void deleteGroup(group)}
-                        type="button"
-                      >
-                        <Trash2 size={17} />
-                      </button>
-                    ) : null}
+                    <button
+                      aria-label={`Delete ${group.name}`}
+                      className={clsx(
+                        "grid h-10 w-10 place-items-center rounded-full transition hover:bg-paper dark:hover:bg-[#1d1d1a]",
+                        group.role === "owner" ? "text-ink/60 dark:text-paper/60" : "text-ink/35 dark:text-paper/35"
+                      )}
+                      onClick={() => void deleteGroup(group)}
+                      type="button"
+                    >
+                      <Trash2 size={17} />
+                    </button>
               <button
                 aria-label={`Invite to ${group.name}`}
                     className="grid h-10 w-10 place-items-center rounded-full border border-line bg-white/75 dark:border-white/15 dark:bg-[#1d1d1a]"
