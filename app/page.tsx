@@ -1311,9 +1311,25 @@ export default function Home() {
   return (
     <main className="min-h-screen px-4 pb-24 pt-5 text-ink dark:text-paper sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-6xl flex-col gap-5">
-        <header className="sticky top-3 z-20 flex items-center justify-between gap-3 rounded-2xl border border-white/70 bg-white/90 px-3 py-2 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]/90">
-          <ConnectionLogo compact />
-          <div className="relative flex items-center gap-2">
+        <header className="sticky top-3 z-20 grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-white/70 bg-white/90 px-3 py-2 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]/90">
+          <label
+            aria-label="Open camera"
+            className="grid h-11 w-11 cursor-pointer place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
+          >
+            <Plus size={30} strokeWidth={1.8} />
+            <input
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(event) => {
+                void handleNativePhoto(event.target.files?.[0] ?? null);
+                event.target.value = "";
+              }}
+              type="file"
+            />
+          </label>
+          <ConnectionLogo compact className="justify-self-center" />
+          <div className="relative flex items-center justify-end gap-2">
             <button
               aria-label="Refresh latest data"
               className="grid h-11 w-11 place-items-center rounded-full border border-line bg-white/90 text-ink shadow-sm transition hover:-translate-y-0.5 dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
@@ -1354,22 +1370,6 @@ export default function Home() {
                 onOpenGroupNotification={(notification) => void openGroupNotification(notification)}
               />
             ) : null}
-            <label
-              aria-label="Open camera"
-              className="grid h-11 w-11 cursor-pointer place-items-center bg-ink text-paper dark:bg-paper dark:text-ink"
-            >
-              <Camera size={18} />
-              <input
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={(event) => {
-                  void handleNativePhoto(event.target.files?.[0] ?? null);
-                  event.target.value = "";
-                }}
-                type="file"
-              />
-            </label>
             <button
               aria-label="Account settings"
               className="grid h-11 w-11 place-items-center rounded-full transition hover:-translate-y-0.5"
@@ -2503,22 +2503,15 @@ function Avatar({
 
 function ConnectionLogo({ className, compact = false }: { className?: string; compact?: boolean }) {
   return (
-    <div className={clsx("flex items-center text-ink dark:text-paper", className)} aria-label="Connection">
-      <svg
-        aria-hidden="true"
-        className={clsx("shrink-0", compact ? "h-10 w-10" : "h-12 w-12")}
-        viewBox="0 0 48 48"
-        fill="none"
-      >
-        <path
-          d="M35.5 16.2C32.8 12.8 28.7 11 24.1 11 16.5 11 10.8 16.7 10.8 24s5.7 13 13.3 13c4.8 0 8.8-1.9 11.5-5.3"
-          className="stroke-ink dark:stroke-paper"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="5.4"
-        />
-      </svg>
-      <span className="sr-only">Connection</span>
+    <div
+      className={clsx(
+        "select-none text-center font-semibold lowercase tracking-normal text-ink dark:text-paper",
+        compact ? "text-xl leading-none sm:text-2xl" : "text-3xl",
+        className
+      )}
+      aria-label="Connection"
+    >
+      connection
     </div>
   );
 }
