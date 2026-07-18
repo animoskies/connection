@@ -1486,6 +1486,7 @@ export default function Home() {
               (selectedPhoto.ownerId === profile.id ||
                 connections.some((connection) => connection.id === selectedPhoto.ownerId))
           )}
+          canDelete={Boolean(profile && selectedPhoto.ownerId === profile.id)}
           onOpenOwner={openPhotoOwner}
           onDelete={deletePhoto}
           photo={selectedPhoto}
@@ -1639,27 +1640,24 @@ function ConnectionsView({
 
       {photos.length ? (
         <section className="flex flex-col gap-7">
-          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-ink/45 dark:text-paper/45">
-            Shared feed
-          </h2>
-      {owners.map((owner) => {
-        const ownerPhotos = photos.filter((photo) => photo.ownerId === owner);
-        const ownerName = ownerPhotos[0]?.owner ?? "Someone";
-        return (
+          {owners.map((owner) => {
+            const ownerPhotos = photos.filter((photo) => photo.ownerId === owner);
+            const ownerName = ownerPhotos[0]?.owner ?? "someone";
+            return (
             <section key={owner}>
               <button className="mb-3 flex items-center gap-3 text-left" onClick={() => onOpenProfile(owner)} type="button">
-              <Avatar name={ownerName} src={ownerPhotos[0]?.ownerAvatar} />
-              <div>
-                <h2 className="font-semibold">{ownerName}</h2>
-                <p className="text-xs text-ink/55 dark:text-paper/55">
-                  {photoTime(ownerPhotos[0])} • {ownerPhotos.length} photos
-                </p>
-              </div>
+                <Avatar name={ownerName} src={ownerPhotos[0]?.ownerAvatar} />
+                <div>
+                  <h2 className="font-semibold">@{ownerName}</h2>
+                  <p className="text-xs text-ink/55 dark:text-paper/55">
+                    {photoTime(ownerPhotos[0])} • {ownerPhotos.length} photos
+                  </p>
+                </div>
               </button>
-            <PhotoStrip openPhoto={openPhoto} photos={ownerPhotos} sourcePhotos={ownerPhotos} />
-          </section>
-        );
-      })}
+              <PhotoStrip openPhoto={openPhoto} photos={ownerPhotos} sourcePhotos={ownerPhotos} />
+            </section>
+            );
+          })}
         </section>
       ) : query.trim().length < 2 ? (
         <EmptyPanel title="No shared feed yet" body="Search for someone to connect with." />
@@ -2159,6 +2157,7 @@ function PhotoStrip({
 }
 
 function PhotoViewer({
+  canDelete,
   canOpenOwner,
   onOpenOwner,
   onDelete,
@@ -2166,6 +2165,7 @@ function PhotoViewer({
   photos,
   setSelectedPhotoId
 }: {
+  canDelete: boolean;
   canOpenOwner: boolean;
   onOpenOwner: (photo: PhotoItem) => void;
   onDelete: (photo: PhotoItem) => void;
@@ -2218,7 +2218,7 @@ function PhotoViewer({
           >
             <Avatar name={photo.owner} src={photo.ownerAvatar} />
             <div>
-              <p className="font-semibold">{photo.owner}</p>
+              <p className="font-semibold">@{photo.owner}</p>
               <p className="text-sm text-ink/60">{photo.location}</p>
             </div>
           </button>
@@ -2226,11 +2226,13 @@ function PhotoViewer({
         </div>
         <p className="text-sm text-ink/60">{photoTime(photo)}</p>
         <p className="mt-3">{photo.caption}</p>
-        <div className="mt-5 flex justify-end border-t border-line pt-4">
-          <button aria-label="Delete photo" className="grid h-10 w-10 place-items-center" onClick={() => onDelete(photo)} type="button">
-            <Trash2 size={20} />
-          </button>
-        </div>
+        {canDelete ? (
+          <div className="mt-5 flex justify-end border-t border-line pt-4">
+            <button aria-label="Delete photo" className="grid h-10 w-10 place-items-center" onClick={() => onDelete(photo)} type="button">
+              <Trash2 size={20} />
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -3131,7 +3133,7 @@ function GroupPanel({
                     <span className="min-w-0">
                       <span className="block truncate text-lg font-semibold">{group.name}</span>
                       <span className="block truncate text-sm text-ink/55 dark:text-paper/55">
-                        {latestPhoto ? `${latestPhoto.owner} • ${photoTime(latestPhoto)}` : "No photos yet"}
+                        {latestPhoto ? `@${latestPhoto.owner} • ${photoTime(latestPhoto)}` : "No photos yet"}
                       </span>
                       <span className="block text-sm text-ink/55 dark:text-paper/55">
                         {group.member_count} {group.member_count === 1 ? "member" : "members"}
@@ -3360,7 +3362,7 @@ function GroupGallery({
       {photos.length ? (
         owners.map((owner) => {
           const ownerPhotos = photos.filter((photo) => photo.ownerId === owner);
-          const ownerName = ownerPhotos[0]?.owner ?? "Someone";
+          const ownerName = ownerPhotos[0]?.owner ?? "someone";
           return (
             <section key={owner}>
               <button
@@ -3370,7 +3372,7 @@ function GroupGallery({
               >
                 <Avatar name={ownerName} src={ownerPhotos[0]?.ownerAvatar} />
                 <p className="text-sm text-ink/55 dark:text-paper/55">
-                  <span className="font-medium text-ink dark:text-paper">{ownerName}</span> {photoTime(ownerPhotos[0])}
+                  <span className="font-medium text-ink dark:text-paper">@{ownerName}</span> {photoTime(ownerPhotos[0])}
                 </p>
               </button>
               <PhotoGrid openPhoto={openPhoto} photos={ownerPhotos} sourcePhotos={photos} />

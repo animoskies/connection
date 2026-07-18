@@ -23,7 +23,7 @@ function photoPayload(row: PhotoRow, signedUrl: string) {
   return {
     id: row.id,
     ownerId: row.owner_id,
-    owner: row.profiles?.display_name ?? row.profiles?.username ?? "Someone",
+    owner: row.profiles?.username ?? row.profiles?.display_name ?? "someone",
     ownerAvatar: row.profiles?.avatar_url ?? "",
     groupId: row.group_id,
     group: row.groups?.name ?? "Ungrouped",
