@@ -404,6 +404,11 @@ export default function Home() {
   }, [message, sessionUserId]);
 
   useEffect(() => {
+    if (!notificationsOpen) return;
+    setNotificationsOpen(false);
+  }, [activeGroupId, activeTab, pendingCaptureSrc, selectedConnectionId, selectedPhotoId]);
+
+  useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
 
     if (process.env.NODE_ENV !== "production") {
@@ -752,6 +757,7 @@ export default function Home() {
     }
 
     setConnectionRequests((current) => current.filter((request) => request.requesterId !== requesterUserId));
+    setNotificationsOpen(false);
     setMessage("Connection request declined.");
   }
 
@@ -837,6 +843,7 @@ export default function Home() {
     localStorage.removeItem("connection-pending-invite");
     setPendingInvite(null);
     setGroupInvites((current) => current.filter((invite) => invite.token !== token));
+    setNotificationsOpen(false);
     setMessage("Invite declined.");
   }
 
@@ -1050,7 +1057,10 @@ export default function Home() {
             <button
               aria-label="Notifications"
               className="relative grid h-11 w-11 place-items-center rounded-full border border-line bg-white/90 text-ink shadow-sm dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
-              onClick={() => setNotificationsOpen((value) => !value)}
+              onClick={() => {
+                setAccountOpen(false);
+                setNotificationsOpen((value) => !value);
+              }}
               type="button"
             >
               <Bell size={18} />
@@ -1087,7 +1097,10 @@ export default function Home() {
             <button
               aria-label="Account settings"
               className="grid h-11 w-11 place-items-center rounded-full transition hover:-translate-y-0.5"
-              onClick={() => setAccountOpen((value) => !value)}
+              onClick={() => {
+                setNotificationsOpen(false);
+                setAccountOpen((value) => !value);
+              }}
             >
               <Avatar name={profile.display_name} src={profile.avatar_url ?? ""} size="sm" className="h-11 w-11" />
             </button>
