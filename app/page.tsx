@@ -498,6 +498,7 @@ export default function Home() {
   const [connectionSearchResults, setConnectionSearchResults] = useState<ConnectionProfile[]>([]);
   const [connectionQuery, setConnectionQuery] = useState("");
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [selectedConnectionProfile, setSelectedConnectionProfile] = useState<ConnectionProfile | null>(null);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
@@ -715,6 +716,7 @@ export default function Home() {
       setConnectionSearchResults([]);
       setConnectionQuery("");
       setSelectedConnectionId(null);
+      setSelectedConnectionProfile(null);
       setEvents([]);
       setPhotos([]);
       return;
@@ -949,9 +951,6 @@ export default function Home() {
 
     const loadedConnections = ((data ?? []) as ConnectionProfileRow[]).map(mapConnectionProfile);
     setConnections(loadedConnections);
-    setSelectedConnectionId((currentId) =>
-      currentId && loadedConnections.some((connection) => connection.id === currentId) ? currentId : null
-    );
   }
 
   async function loadConnectionRequests() {
@@ -1000,6 +999,9 @@ export default function Home() {
       current.map((result) =>
         result.id === targetUserId ? { ...result, relationship: "pending_sent" } : result
       )
+    );
+    setSelectedConnectionProfile((current) =>
+      current?.id === targetUserId ? { ...current, relationship: "pending_sent" } : current
     );
     await loadConnections();
     await loadConnectionRequests();
@@ -1056,6 +1058,7 @@ export default function Home() {
     }
 
     setSelectedConnectionId(null);
+    setSelectedConnectionProfile(null);
     await loadConnections();
     await loadPhotos();
     setMessage("Connection removed.");
@@ -1327,7 +1330,9 @@ export default function Home() {
   const calendarGroup = groups.find((group) => group.id === calendarGroupId) ?? null;
   const unreadGroupNotifications = groupNotifications.filter((notification) => !notification.readAt);
   const notificationCount = groupInvites.length + connectionRequests.length + unreadGroupNotifications.length;
-  const selectedConnection = connections.find((connection) => connection.id === selectedConnectionId) ?? null;
+  const selectedConnection =
+    connections.find((connection) => connection.id === selectedConnectionId) ??
+    (selectedConnectionProfile?.id === selectedConnectionId ? selectedConnectionProfile : null);
   const selectedDayEvents = useMemo(() => {
     return calendarEvents.filter((event) => localDateTime(event, preferredTimezone).toISODate() === selectedDate);
   }, [calendarEvents, preferredTimezone, selectedDate]);
@@ -1497,11 +1502,12 @@ export default function Home() {
               setConnectionQuery("");
               setConnectionSearchResults([]);
             }}
-            onOpenProfile={(profileId) => {
+            onOpenProfile={(profileResult) => {
               setHeaderSearchOpen(false);
               setConnectionQuery("");
               setConnectionSearchResults([]);
-              setSelectedConnectionId(profileId);
+              setSelectedConnectionProfile(profileResult);
+              setSelectedConnectionId(profileResult.id);
             }}
             onSendRequest={(profileId) => void sendConnectionRequest(profileId)}
           />
@@ -1522,9 +1528,16 @@ export default function Home() {
             openPhoto={openPhoto}
             photos={connectionPhotos}
             selectedConnection={selectedConnection}
-            onBack={() => setSelectedConnectionId(null)}
-            onOpenProfile={setSelectedConnectionId}
+            onBack={() => {
+              setSelectedConnectionId(null);
+              setSelectedConnectionProfile(null);
+            }}
+            onOpenProfile={(profileId) => {
+              setSelectedConnectionId(profileId);
+              setSelectedConnectionProfile(null);
+            }}
             onRemoveConnection={(profileId) => void removeConnection(profileId)}
+            onSendRequest={(profileId) => void sendConnectionRequest(profileId)}
           />
         ) : null}
 
@@ -1660,7 +1673,8 @@ function ConnectionsView({
   selectedConnection,
   onBack,
   onOpenProfile,
-  onRemoveConnection
+  onRemoveConnection,
+  onSendRequest
 }: {
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
@@ -1668,11 +1682,22 @@ function ConnectionsView({
   onBack: () => void;
   onOpenProfile: (profileId: string) => void;
   onRemoveConnection: (profileId: string) => void;
+  onSendRequest: (profileId: string) => void;
 }) {
   const owners = [...new Set(photos.map((photo) => photo.ownerId))];
 
   if (selectedConnection) {
     const profilePhotos = photos.filter((photo) => photo.ownerId === selectedConnection.id);
+    const actionLabel =
+      selectedConnection.relationship === "connected"
+        ? "Remove"
+        : selectedConnection.relationship === "pending_sent"
+          ? "Requested"
+          : selectedConnection.relationship === "pending_received"
+            ? "Accept in notifications"
+            : "Connect";
+    const actionDisabled =
+      selectedConnection.relationship === "pending_sent" || selectedConnection.relationship === "pending_received";
     return (
       <section className="flex flex-col gap-6">
         <div className="flex items-center justify-between gap-3">
@@ -1680,11 +1705,22 @@ function ConnectionsView({
             <ArrowLeft size={21} />
           </button>
           <button
-            className="rounded-full border border-line px-3 py-1.5 text-xs text-ink/65 dark:border-white/15 dark:text-paper/65"
-            onClick={() => onRemoveConnection(selectedConnection.id)}
+            className={clsx(
+              "rounded-full px-3 py-1.5 text-xs font-medium",
+              selectedConnection.relationship === "none"
+                ? "bg-ink text-paper dark:bg-paper dark:text-ink"
+                : "border border-line text-ink/65 dark:border-white/15 dark:text-paper/65",
+              actionDisabled && "opacity-60"
+            )}
+            disabled={actionDisabled}
+            onClick={() =>
+              selectedConnection.relationship === "connected"
+                ? onRemoveConnection(selectedConnection.id)
+                : onSendRequest(selectedConnection.id)
+            }
             type="button"
           >
-            Remove
+            {actionLabel}
           </button>
         </div>
         <section className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
@@ -1753,7 +1789,7 @@ function ConnectionSearchModal({
   results: ConnectionProfile[];
   setQuery: (value: string) => void;
   onClose: () => void;
-  onOpenProfile: (profileId: string) => void;
+  onOpenProfile: (profile: ConnectionProfile) => void;
   onSendRequest: (profileId: string) => void;
 }) {
   const trimmedQuery = query.trim();
@@ -1821,10 +1857,9 @@ function ConnectionSearchResult({
   onSendRequest
 }: {
   profile: ConnectionProfile;
-  onOpenProfile: (profileId: string) => void;
+  onOpenProfile: (profile: ConnectionProfile) => void;
   onSendRequest: (profileId: string) => void;
 }) {
-  const canOpen = profile.relationship === "connected";
   const actionLabel =
     profile.relationship === "connected"
       ? "View"
@@ -1838,8 +1873,7 @@ function ConnectionSearchResult({
     <article className="flex items-center gap-3 rounded-lg border border-white/70 bg-white/85 p-3 shadow-sm dark:border-white/15 dark:bg-[#242420]">
       <button
         className="flex min-w-0 flex-1 items-center gap-3 text-left"
-        disabled={!canOpen}
-        onClick={() => onOpenProfile(profile.id)}
+        onClick={() => onOpenProfile(profile)}
         type="button"
       >
         <Avatar name={profile.displayName} src={profile.avatarUrl} />
@@ -1856,7 +1890,7 @@ function ConnectionSearchResult({
             : "border border-line text-ink/60 dark:border-white/15 dark:text-paper/60"
         )}
         disabled={profile.relationship === "pending_sent" || profile.relationship === "pending_received"}
-        onClick={() => (profile.relationship === "connected" ? onOpenProfile(profile.id) : onSendRequest(profile.id))}
+        onClick={() => (profile.relationship === "connected" ? onOpenProfile(profile) : onSendRequest(profile.id))}
         type="button"
       >
         {actionLabel}
