@@ -3103,7 +3103,7 @@ function GroupPanel({
                   </button>
                 </form>
               ) : (
-                <div className="grid grid-cols-[5rem_minmax(0,1fr)_auto] items-center gap-3">
+                <div className="grid grid-cols-[4rem_minmax(0,1fr)_auto] items-center gap-3">
                   <button
                     className="contents text-left"
                     onClick={() => setActiveGroupId(group.id)}
@@ -3189,7 +3189,7 @@ function GroupThumb({ groupId, photos }: { groupId: string; photos: PhotoItem[] 
   const image = photos.find((photo) => photo.groupId === groupId)?.src;
 
   return (
-    <span className="block h-16 w-20 overflow-hidden rounded-lg bg-paper dark:bg-[#1d1d1a]">
+    <span className="block h-16 w-16 overflow-hidden rounded-lg bg-paper dark:bg-[#1d1d1a]">
       {image ? <img alt="" className={memoryPhotoClass} src={image} /> : null}
     </span>
   );
