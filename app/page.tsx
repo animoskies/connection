@@ -757,9 +757,7 @@ export default function Home() {
     <main className="min-h-screen px-4 pb-24 pt-5 text-ink dark:text-paper sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-6xl flex-col gap-5">
         <header className="flex items-center justify-between gap-3">
-          <div className="text-2xl font-semibold leading-none text-ink dark:text-paper sm:text-3xl">
-            Connection
-          </div>
+          <ConnectionLogo compact />
           <div className="relative flex items-center gap-2">
             <button
               aria-label="Notifications"
@@ -1514,6 +1512,37 @@ function Avatar({
   );
 }
 
+function ConnectionLogo({ className, compact = false }: { className?: string; compact?: boolean }) {
+  return (
+    <div className={clsx("flex items-center gap-3 text-ink dark:text-paper", className)} aria-label="Connection">
+      <svg
+        aria-hidden="true"
+        className={clsx("shrink-0", compact ? "h-8 w-8" : "h-10 w-10")}
+        viewBox="0 0 48 48"
+        fill="none"
+      >
+        <circle cx="18" cy="24" r="10.5" className="stroke-ink dark:stroke-paper" strokeWidth="3.2" />
+        <circle cx="30" cy="24" r="10.5" className="stroke-moss dark:stroke-skysoft" strokeWidth="3.2" />
+        <path
+          d="M21.5 18.5c2.1-2.2 4.9-3.5 8.5-3.5 5.6 0 10.5 4.2 10.5 9s-4.9 9-10.5 9c-3.6 0-6.4-1.3-8.5-3.5"
+          className="stroke-rust dark:stroke-[#d8a08c]"
+          strokeLinecap="round"
+          strokeWidth="2.2"
+        />
+        <circle cx="24" cy="24" r="2.4" className="fill-ink dark:fill-paper" />
+      </svg>
+      <span
+        className={clsx(
+          "font-semibold leading-none tracking-normal",
+          compact ? "text-[1.42rem] sm:text-[1.55rem]" : "text-3xl"
+        )}
+      >
+        Connection
+      </span>
+    </div>
+  );
+}
+
 function AuthScreen({ message, setMessage }: { message: string; setMessage: (value: string) => void }) {
   const [mode, setMode] = useState<"signin" | "signup">("signup");
   const [email, setEmail] = useState("");
@@ -1556,7 +1585,7 @@ function AuthScreen({ message, setMessage }: { message: string; setMessage: (val
 
         <div className="w-full rounded-lg border border-white/70 bg-white/95 p-5 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420] sm:p-6">
           <div className="mb-6">
-            <div className="mb-4 text-3xl font-semibold leading-none text-ink dark:text-paper">Connection</div>
+            <ConnectionLogo className="mb-5" />
             <h1 className="text-3xl font-semibold leading-tight sm:text-4xl">Share moments with the people who matter.</h1>
             <p className="mt-3 text-sm leading-6 text-ink/65 dark:text-paper/65">
               Keep photos, groups, and shared plans in one quiet place.
