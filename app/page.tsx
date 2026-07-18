@@ -1608,8 +1608,7 @@ function ConnectionsView({
   return (
     <section className="flex flex-col gap-7">
       <div>
-        <h1 className="text-2xl font-semibold">Connections</h1>
-        <label className="mt-4 flex items-center gap-2 border-b border-line bg-white/60 px-1 py-3 text-ink dark:border-white/15 dark:bg-transparent dark:text-paper">
+        <label className="flex items-center gap-2 border-b border-line bg-white/60 px-1 py-3 text-ink dark:border-white/15 dark:bg-transparent dark:text-paper">
           <Search size={19} />
           <input
             className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-ink/40 dark:placeholder:text-paper/40"
@@ -1963,8 +1962,7 @@ function CalendarView({
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-        <h1 className="text-2xl font-semibold">Calendar</h1>
+      <div className="flex items-center justify-end">
         <div className="flex items-center gap-2">
         <select
           className="min-w-0 flex-1 rounded-lg border border-white/70 bg-white/90 px-3 py-2 text-sm text-ink shadow-sm outline-none dark:border-white/15 dark:bg-[#242420] dark:text-paper sm:w-44"
@@ -3001,8 +2999,7 @@ function GroupPanel({
   return (
     <section>
       <div className="mb-5">
-        <div className="flex items-center justify-between gap-3">
-          <h1 className="text-2xl font-semibold">Groups</h1>
+        <div className="flex items-center justify-end gap-3">
           <button
             aria-label="Add group"
             className="grid h-8 w-8 place-items-center text-ink/75 transition hover:text-ink dark:text-paper/75 dark:hover:text-paper"
@@ -3017,7 +3014,6 @@ function GroupPanel({
             <Plus size={18} />
           </button>
         </div>
-          <p className="mt-1 text-sm text-ink/50 dark:text-paper/50">Private spaces for photos and shared plans.</p>
       </div>
 
       {addOpen ? (
