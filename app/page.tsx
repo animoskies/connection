@@ -1443,7 +1443,7 @@ function ConnectionsView({
           <Search size={19} />
           <input
             className="min-w-0 flex-1 bg-transparent text-base outline-none placeholder:text-ink/40 dark:placeholder:text-paper/40"
-            placeholder="Search username"
+            placeholder="Search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -1462,7 +1462,7 @@ function ConnectionsView({
               />
             ))
           ) : (
-            <p className="text-sm text-ink/55 dark:text-paper/55">No matching usernames yet.</p>
+            <p className="text-sm text-ink/55 dark:text-paper/55">No matching people yet.</p>
           )}
         </section>
       ) : null}
@@ -1492,7 +1492,7 @@ function ConnectionsView({
       })}
         </section>
       ) : query.trim().length < 2 ? (
-        <EmptyPanel title="No shared feed yet" body="Search a username to connect with someone." />
+        <EmptyPanel title="No shared feed yet" body="Search for someone to connect with." />
       ) : null}
     </section>
   );
@@ -2838,7 +2838,7 @@ function GroupPanel({
               <UsernameSearchPicker
                 excludeIds={[profile.id, ...selectedMembers.map((member) => member.id)]}
                 onSelect={(member) => setSelectedMembers((current) => [...current, member])}
-                placeholder="Search username to invite"
+                placeholder="Search"
                 setMessage={setMessage}
               />
               {selectedMembers.length ? (
@@ -3242,7 +3242,7 @@ function MemberPanel({
             <UsernameSearchPicker
               excludeIds={[profile.id]}
               onSelect={setInvitee}
-              placeholder="Search username"
+              placeholder="Search"
               setMessage={setMessage}
             />
           )}
