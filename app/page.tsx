@@ -205,7 +205,11 @@ function isTransientMessage(message: string) {
     "Dark mode off.",
     "Invite link copied.",
     "Invite declined."
-  ].includes(message) || message.startsWith("Invite sent to @") || message.startsWith("Joined ") || message.startsWith("Only admin @");
+  ].includes(message) ||
+    message.startsWith("Invite sent to @") ||
+    message.startsWith("Joined ") ||
+    message.startsWith("Only admin @") ||
+    message.startsWith("Connect with ");
 }
 
 function mapConnectionProfile(row: ConnectionProfileRow): ConnectionProfile {
@@ -983,6 +987,21 @@ export default function Home() {
     }
   }
 
+  function openPersonProfile(profileId: string, displayName = "this person") {
+    if (profile && profileId === profile.id) {
+      setActiveTab("profile");
+      return;
+    }
+
+    if (connections.some((connection) => connection.id === profileId)) {
+      setSelectedConnectionId(profileId);
+      setActiveTab("connections");
+      return;
+    }
+
+    setMessage(`Connect with ${displayName} to see their feed.`);
+  }
+
   async function handleNativePhoto(file: File | null) {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
@@ -1261,6 +1280,7 @@ export default function Home() {
             activeGroupId={activeGroupId}
             groups={groups}
             notifyGroupMembers={notifyGroupMembers}
+            onOpenProfile={openPersonProfile}
             photos={allPhotos}
             profile={profile}
             reload={() => loadWorkspace()}
@@ -1553,6 +1573,7 @@ function GroupsView({
   activeGroupId,
   groups,
   notifyGroupMembers,
+  onOpenProfile,
   openPhoto,
   photos,
   profile,
@@ -1564,6 +1585,7 @@ function GroupsView({
   activeGroupId: string | null;
   groups: Group[];
   notifyGroupMembers: (groupId: string, message: string) => Promise<void>;
+  onOpenProfile: (profileId: string, displayName?: string) => void;
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
   profile: Profile;
@@ -1592,6 +1614,7 @@ function GroupsView({
         <GroupGallery
           group={activeGroup}
           notifyGroupMembers={notifyGroupMembers}
+          onOpenProfile={onOpenProfile}
           openPhoto={openPhoto}
           photos={selectedGroupPhotos}
           profile={profile}
@@ -3058,6 +3081,7 @@ function UsernameSearchPicker({
 function GroupGallery({
   group,
   notifyGroupMembers,
+  onOpenProfile,
   openPhoto,
   photos,
   profile,
@@ -3067,6 +3091,7 @@ function GroupGallery({
 }: {
   group: Group;
   notifyGroupMembers: (groupId: string, message: string) => Promise<void>;
+  onOpenProfile: (profileId: string, displayName?: string) => void;
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
   profile: Profile;
@@ -3115,12 +3140,16 @@ function GroupGallery({
           const ownerName = ownerPhotos[0]?.owner ?? "Someone";
           return (
             <section key={owner}>
-              <div className="mb-3 flex items-center gap-3">
+              <button
+                className="mb-3 flex items-center gap-3 text-left transition hover:opacity-75"
+                onClick={() => onOpenProfile(owner, ownerName)}
+                type="button"
+              >
                 <Avatar name={ownerName} src={ownerPhotos[0]?.ownerAvatar} />
                 <p className="text-sm text-ink/55 dark:text-paper/55">
                   <span className="font-medium text-ink dark:text-paper">{ownerName}</span> {photoTime(ownerPhotos[0])}
                 </p>
-              </div>
+              </button>
               <PhotoGrid openPhoto={openPhoto} photos={ownerPhotos} sourcePhotos={photos} />
             </section>
           );
