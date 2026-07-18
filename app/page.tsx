@@ -526,7 +526,10 @@ export default function Home() {
   const [calendarEventToOpenId, setCalendarEventToOpenId] = useState<string | null>(null);
   const [loading, setLoading] = useState(hasSupabaseConfig);
   const [message, setMessage] = useState("");
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return localStorage.getItem("connection-dark-mode") !== "false";
+  });
   const [accountOpen, setAccountOpen] = useState(false);
   const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -536,6 +539,7 @@ export default function Home() {
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
+    localStorage.setItem("connection-dark-mode", String(darkMode));
   }, [darkMode]);
 
   useEffect(() => {
