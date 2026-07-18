@@ -114,6 +114,7 @@ const nativePhotoMaxSize = 1280;
 const nativePhotoQuality = 0.72;
 const avatarPhotoSize = 320;
 type OpenPhoto = (id: string, photos: PhotoItem[]) => void;
+type WorkspaceReload = () => void | Promise<void>;
 type ShareTarget =
   | { type: "connections" }
   | { type: "group"; groupId: string };
@@ -269,6 +270,7 @@ export default function Home() {
   const [viewerPhotoIds, setViewerPhotoIds] = useState<string[]>([]);
   const [pendingCaptureSrc, setPendingCaptureSrc] = useState<string | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState<ViewMode>("agenda");
   const [selectedDate, setSelectedDate] = useState(DateTime.now().toISODate());
   const [loading, setLoading] = useState(hasSupabaseConfig);
@@ -394,10 +396,11 @@ export default function Home() {
     void preparePendingInvitePrompt();
   }, [sessionUserId, profile]);
 
-  async function loadWorkspace(userId = sessionUserId) {
+  async function loadWorkspace(userId = sessionUserId, options: { clearMessage?: boolean } = {}) {
     if (!supabase || !userId) return;
+    const { clearMessage = true } = options;
     setLoading(true);
-    setMessage("");
+    if (clearMessage) setMessage("");
 
     const { data: profileData, error: profileError } = await supabase
       .from("profiles")
@@ -485,6 +488,17 @@ export default function Home() {
     await loadGroupInvites(userId);
 
     setLoading(false);
+  }
+
+  async function refreshWorkspace() {
+    if (!sessionUserId || refreshing) return;
+    setRefreshing(true);
+    try {
+      await loadWorkspace(sessionUserId, { clearMessage: false });
+      setMessage("Latest photos, groups, invites, and calendar loaded.");
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   async function loadGroupInvites(userId = sessionUserId) {
@@ -689,6 +703,7 @@ export default function Home() {
     setViewerPhotoIds([payload.photo.id]);
     setSelectedPhotoId(payload.photo.id);
     setPendingCaptureSrc(null);
+    setMessage(target.type === "group" ? "Photo posted to group." : "Photo posted to connections.");
     setPhotoUploading(false);
   }
 
@@ -711,6 +726,7 @@ export default function Home() {
     const remainingViewerIds = viewerPhotoIds.filter((id) => id !== photo.id);
     setViewerPhotoIds(remainingViewerIds);
     setSelectedPhotoId(remainingViewerIds[0] ?? null);
+    setMessage("Photo deleted.");
   }
 
   const activeGroup = groups.find((group) => group.id === activeGroupId) ?? null;
@@ -759,6 +775,15 @@ export default function Home() {
         <header className="flex items-center justify-between gap-3">
           <ConnectionLogo compact />
           <div className="relative flex items-center gap-2">
+            <button
+              aria-label="Refresh latest data"
+              className="grid h-11 w-11 place-items-center rounded-full border border-line bg-white/90 text-ink shadow-sm transition hover:-translate-y-0.5 dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+              disabled={refreshing}
+              onClick={() => void refreshWorkspace()}
+              type="button"
+            >
+              <RefreshCw className={clsx(refreshing && "animate-spin")} size={18} />
+            </button>
             <button
               aria-label="Notifications"
               className="relative grid h-11 w-11 place-items-center rounded-full border border-line bg-white/90 text-ink shadow-sm dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
@@ -974,7 +999,7 @@ function GroupsView({
   groups: Group[];
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
-  reload: () => void;
+  reload: WorkspaceReload;
   setActiveGroupId: (id: string | null) => void;
   setMessage: (value: string) => void;
 }) {
@@ -1061,7 +1086,7 @@ function CalendarView({
   events: EventItem[];
   groups: Group[];
   profile: Profile;
-  reload: () => void;
+  reload: WorkspaceReload;
   selectedDayEvents: EventItem[];
   selectedDate: string;
   setCalendarGroupId: (id: string) => void;
@@ -1085,7 +1110,8 @@ function CalendarView({
       return;
     }
     if (editingEventId === event.id) setEditingEventId(null);
-    reload();
+    await reload();
+    setMessage("Calendar event deleted.");
   }
 
   return (
@@ -1514,31 +1540,29 @@ function Avatar({
 
 function ConnectionLogo({ className, compact = false }: { className?: string; compact?: boolean }) {
   return (
-    <div className={clsx("flex items-center gap-3 text-ink dark:text-paper", className)} aria-label="Connection">
+    <div className={clsx("flex items-center text-ink dark:text-paper", className)} aria-label="Connection">
       <svg
         aria-hidden="true"
-        className={clsx("shrink-0", compact ? "h-8 w-8" : "h-10 w-10")}
+        className={clsx("shrink-0", compact ? "h-10 w-10" : "h-12 w-12")}
         viewBox="0 0 48 48"
         fill="none"
       >
-        <circle cx="18" cy="24" r="10.5" className="stroke-ink dark:stroke-paper" strokeWidth="3.2" />
-        <circle cx="30" cy="24" r="10.5" className="stroke-moss dark:stroke-skysoft" strokeWidth="3.2" />
         <path
-          d="M21.5 18.5c2.1-2.2 4.9-3.5 8.5-3.5 5.6 0 10.5 4.2 10.5 9s-4.9 9-10.5 9c-3.6 0-6.4-1.3-8.5-3.5"
-          className="stroke-rust dark:stroke-[#d8a08c]"
+          d="M35.5 16.2C32.8 12.8 28.7 11 24.1 11 16.5 11 10.8 16.7 10.8 24s5.7 13 13.3 13c4.8 0 8.8-1.9 11.5-5.3"
+          className="stroke-ink dark:stroke-paper"
           strokeLinecap="round"
-          strokeWidth="2.2"
+          strokeLinejoin="round"
+          strokeWidth="5.4"
         />
-        <circle cx="24" cy="24" r="2.4" className="fill-ink dark:fill-paper" />
+        <path
+          d="M35.7 16.2c-2.4-3.2-6.2-5.1-10.7-5.2"
+          className="stroke-moss dark:stroke-skysoft"
+          strokeLinecap="round"
+          strokeWidth="3.1"
+        />
+        <circle cx="36.6" cy="31.3" r="2.6" className="fill-rust dark:fill-[#d8a08c]" />
       </svg>
-      <span
-        className={clsx(
-          "font-semibold leading-none tracking-normal",
-          compact ? "text-[1.42rem] sm:text-[1.55rem]" : "text-3xl"
-        )}
-      >
-        Connection
-      </span>
+      <span className="sr-only">Connection</span>
     </div>
   );
 }
@@ -1744,7 +1768,7 @@ function AccountMenu({
 }: {
   darkMode: boolean;
   profile: Profile;
-  reload: () => void;
+  reload: WorkspaceReload;
   setDarkMode: (value: boolean) => void;
   setMessage: (value: string) => void;
 }) {
@@ -1898,7 +1922,7 @@ function GroupPanel({
   activeGroupId: string | null;
   photos: PhotoItem[];
   setActiveGroupId: (value: string | null) => void;
-  reload: () => void;
+  reload: WorkspaceReload;
   setMessage: (value: string) => void;
 }) {
   const [name, setName] = useState("");
@@ -2011,7 +2035,7 @@ function GroupGallery({
   group: Group;
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
-  reload: () => void;
+  reload: WorkspaceReload;
   setMessage: (value: string) => void;
   setActiveGroupId: (id: string | null) => void;
 }) {
@@ -2071,7 +2095,7 @@ function MemberPanel({
   setMessage
 }: {
   group: Group;
-  reload: () => void;
+  reload: WorkspaceReload;
   setMessage: (value: string) => void;
 }) {
   const [invite, setInvite] = useState("");
@@ -2388,7 +2412,7 @@ function EventForm({
   onCancelEdit: () => void;
   profile: Profile;
   selectedDate: string;
-  reload: () => void;
+  reload: WorkspaceReload;
   setMessage: (value: string) => void;
 }) {
   const [title, setTitle] = useState("");
@@ -2444,11 +2468,13 @@ function EventForm({
       return;
     }
 
+    const action = editingEvent ? "updated" : "added";
     setTitle("");
     setDescription("");
     setLocation("");
     onCancelEdit();
-    reload();
+    await reload();
+    setMessage(`Calendar event ${action}.`);
   }
 
   const canEdit = group.role === "owner" || group.role === "editor";
