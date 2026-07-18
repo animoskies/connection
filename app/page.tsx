@@ -487,7 +487,7 @@ export default function Home() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<AppTab>("gallery");
+  const [activeTab, setActiveTab] = useState<AppTab>("connections");
   const [calendarGroupId, setCalendarGroupId] = useState("all");
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [viewerPhotoIds, setViewerPhotoIds] = useState<string[]>([]);
@@ -2064,10 +2064,10 @@ function BottomNav({
   setActiveTab: (tab: AppTab) => void;
 }) {
   const items: Array<[AppTab, string, React.ReactNode]> = [
-    ["gallery", "Gallery", <ImageIcon key="gallery" size={18} />],
     ["connections", "Connections", <Users key="connections" size={18} />],
     ["groups", "Groups", <Users key="groups" size={18} />],
     ["calendar", "Calendar", <CalendarDays key="calendar" size={18} />],
+    ["gallery", "Gallery", <ImageIcon key="gallery" size={18} />],
     ["profile", "Profile", <User key="profile" size={18} />]
   ];
 
