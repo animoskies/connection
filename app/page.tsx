@@ -1290,7 +1290,6 @@ export default function Home() {
             openPhoto={openPhoto}
             photos={allPhotos}
             profile={profile}
-            setAccountOpen={setAccountOpen}
             onOpenConnection={(profileId) => {
               setSelectedConnectionId(profileId);
               setActiveTab("connections");
@@ -1604,7 +1603,6 @@ function ProfileView({
   openPhoto,
   photos,
   profile,
-  setAccountOpen,
   onOpenConnection,
   onOpenGroups
 }: {
@@ -1613,7 +1611,6 @@ function ProfileView({
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
   profile: Profile;
-  setAccountOpen: (value: boolean) => void;
   onOpenConnection: (profileId: string) => void;
   onOpenGroups: () => void;
 }) {
@@ -1640,9 +1637,6 @@ function ProfileView({
             <span className="text-xs text-ink/55 dark:text-paper/55">Groups</span>
           </button>
         </div>
-        <button className="mt-4 rounded-full border border-line px-4 py-2 text-sm" onClick={() => setAccountOpen(true)}>
-          Settings
-        </button>
       </div>
 
       {showConnections ? (
