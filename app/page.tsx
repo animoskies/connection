@@ -108,6 +108,7 @@ type PendingGroupInviteRow = {
 };
 
 const supabase = hasSupabaseConfig ? createSupabaseClient() : null;
+const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
 const memoryPhotoClass = "h-full w-full object-cover";
 const nativePhotoMaxSize = 1280;
 const nativePhotoQuality = 0.72;
@@ -116,6 +117,12 @@ type OpenPhoto = (id: string, photos: PhotoItem[]) => void;
 type ShareTarget =
   | { type: "connections" }
   | { type: "group"; groupId: string };
+
+function appUrl(path = "/") {
+  const base = configuredAppUrl || (typeof window !== "undefined" ? window.location.origin : "");
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${base}${normalizedPath}`;
+}
 
 function localDateTime(event: EventItem, timezone: string) {
   return DateTime.fromISO(event.starts_at_utc, { zone: "utc" }).setZone(timezone);
@@ -1479,7 +1486,7 @@ function AuthScreen({ message, setMessage }: { message: string; setMessage: (val
     const pendingInvite = localStorage.getItem("connection-pending-invite");
     const emailRedirectTo =
       mode === "signup"
-        ? `${window.location.origin}/${pendingInvite ? `?invite=${encodeURIComponent(pendingInvite)}` : ""}`
+        ? appUrl(pendingInvite ? `/?invite=${encodeURIComponent(pendingInvite)}` : "/")
         : undefined;
 
     const { data, error } =
@@ -2075,7 +2082,7 @@ function MemberPanel({
       return;
     }
 
-    const inviteUrl = `${window.location.origin}/?invite=${token}`;
+    const inviteUrl = appUrl(`/?invite=${token}`);
     setInviteLink(inviteUrl);
     const copied = await copyText(inviteUrl);
     setMessage(copied ? "Invite link copied." : "Invite link created. Tap the link to copy it manually.");
