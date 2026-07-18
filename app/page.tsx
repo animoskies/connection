@@ -819,7 +819,6 @@ export default function Home() {
     setRefreshing(true);
     try {
       await loadWorkspace(sessionUserId, { clearMessage: false });
-      setMessage("Refreshed.");
     } finally {
       setRefreshing(false);
     }
