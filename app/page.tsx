@@ -3206,7 +3206,7 @@ function GroupPanel({
           }}
           type="button"
         >
-          Add
+          New Group
         </button>
       </div>
 
