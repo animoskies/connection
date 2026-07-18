@@ -2393,7 +2393,18 @@ function PhotoViewer({
       <div className="flex items-center justify-between px-4 py-4">
         <button onClick={() => setSelectedPhotoId(null)}>Back</button>
         <p className="text-sm">{currentIndex + 1} / {photos.length}</p>
-        <button>...</button>
+        {canDelete ? (
+          <button
+            aria-label="Delete photo"
+            className="grid h-10 w-10 place-items-center"
+            onClick={() => onDelete(photo)}
+            type="button"
+          >
+            <Trash2 size={19} />
+          </button>
+        ) : (
+          <span aria-hidden="true" className="h-10 w-10" />
+        )}
       </div>
       <div className="relative min-h-0 flex-1">
         <img alt={photo.title} className={memoryPhotoClass} src={photo.src} />
@@ -2437,13 +2448,6 @@ function PhotoViewer({
         </div>
         <p className="text-sm text-ink/60">{photoTime(photo)}</p>
         <p className="mt-3">{photo.caption}</p>
-        {canDelete ? (
-          <div className="mt-5 flex justify-end border-t border-line pt-4">
-            <button aria-label="Delete photo" className="grid h-10 w-10 place-items-center" onClick={() => onDelete(photo)} type="button">
-              <Trash2 size={20} />
-            </button>
-          </div>
-        ) : null}
       </div>
     </div>
   );
