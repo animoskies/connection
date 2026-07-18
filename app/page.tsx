@@ -51,6 +51,16 @@ type Group = {
   member_count: number;
 };
 
+type GroupMember = {
+  groupId: string;
+  id: string;
+  username: string;
+  displayName: string;
+  avatarUrl: string;
+  role: "owner" | "editor" | "viewer";
+  relationship: ConnectionRelationship;
+};
+
 type EventItem = {
   id: string;
   group_id: string;
@@ -491,6 +501,7 @@ export default function Home() {
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
+  const [groupMembers, setGroupMembers] = useState<Record<string, GroupMember[]>>({});
   const [groupInvites, setGroupInvites] = useState<GroupInvite[]>([]);
   const [groupNotifications, setGroupNotifications] = useState<GroupNotification[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<ConnectionRequest[]>([]);
@@ -709,6 +720,7 @@ export default function Home() {
     if (!sessionUserId) {
       setProfile(null);
       setGroups([]);
+      setGroupMembers({});
       setGroupInvites([]);
       setGroupNotifications([]);
       setConnectionRequests([]);
@@ -785,7 +797,7 @@ export default function Home() {
     if (loadedGroups.length) {
       const { data: allMemberRows, error: memberCountError } = await supabase
         .from("group_members")
-        .select("group_id")
+        .select("group_id, user_id, role, profiles!group_members_user_id_fkey(username, display_name, avatar_url)")
         .in(
           "group_id",
           loadedGroups.map((group) => group.id)
@@ -795,13 +807,30 @@ export default function Home() {
         setMessage(memberCountError.message);
       } else {
         const memberCounts = new Map<string, number>();
+        const membersByGroup: Record<string, GroupMember[]> = {};
         allMemberRows?.forEach((member) => {
           memberCounts.set(member.group_id, (memberCounts.get(member.group_id) ?? 0) + 1);
+          const memberProfile = Array.isArray(member.profiles) ? member.profiles[0] : member.profiles;
+          if (!memberProfile) return;
+          const groupMembers = membersByGroup[member.group_id] ?? [];
+          groupMembers.push({
+            groupId: member.group_id,
+            id: member.user_id,
+            username: memberProfile.username ?? "user",
+            displayName: memberProfile.display_name ?? memberProfile.username ?? "Member",
+            avatarUrl: memberProfile.avatar_url ?? "",
+            role: member.role,
+            relationship: member.user_id === userId ? "self" : "none"
+          });
+          membersByGroup[member.group_id] = groupMembers;
         });
         loadedGroups.forEach((group) => {
           group.member_count = memberCounts.get(group.id) ?? 1;
         });
+        setGroupMembers(membersByGroup);
       }
+    } else {
+      setGroupMembers({});
     }
 
     setGroups(loadedGroups);
@@ -1545,6 +1574,7 @@ export default function Home() {
           <GroupsView
             activeGroup={activeGroup}
             activeGroupId={activeGroupId}
+            groupMembers={groupMembers}
             groups={groups}
             notifyGroupMembers={notifyGroupMembers}
             onOpenGroupCalendar={(groupId) => {
@@ -1902,6 +1932,7 @@ function ConnectionSearchResult({
 function GroupsView({
   activeGroup,
   activeGroupId,
+  groupMembers,
   groups,
   notifyGroupMembers,
   onOpenGroupCalendar,
@@ -1915,6 +1946,7 @@ function GroupsView({
 }: {
   activeGroup: Group | null;
   activeGroupId: string | null;
+  groupMembers: Record<string, GroupMember[]>;
   groups: Group[];
   notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   onOpenGroupCalendar: (groupId: string) => void;
@@ -1946,6 +1978,7 @@ function GroupsView({
       ) : (
         <GroupGallery
           group={activeGroup}
+          members={groupMembers[activeGroup.id] ?? []}
           notifyGroupMembers={notifyGroupMembers}
           onOpenGroupCalendar={onOpenGroupCalendar}
           onOpenProfile={onOpenProfile}
@@ -3505,6 +3538,7 @@ function UsernameSearchPicker({
 
 function GroupGallery({
   group,
+  members,
   notifyGroupMembers,
   onOpenGroupCalendar,
   onOpenProfile,
@@ -3516,6 +3550,7 @@ function GroupGallery({
   setActiveGroupId
 }: {
   group: Group;
+  members: GroupMember[];
   notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   onOpenGroupCalendar: (groupId: string) => void;
   onOpenProfile: (profileId: string, displayName?: string) => void;
@@ -3528,6 +3563,7 @@ function GroupGallery({
 }) {
   const owners = [...new Set(photos.map((photo) => photo.ownerId))];
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
 
   return (
     <section className="flex flex-col gap-7">
@@ -3537,9 +3573,13 @@ function GroupGallery({
         </button>
         <div className="text-center">
           <h1 className="text-lg font-semibold">{group.name}</h1>
-          <p className="text-xs text-ink/55 dark:text-paper/55">
+          <button
+            className="text-xs text-ink/55 transition hover:text-ink dark:text-paper/55 dark:hover:text-paper"
+            onClick={() => setMembersOpen(true)}
+            type="button"
+          >
             {group.member_count} {group.member_count === 1 ? "member" : "members"}
-          </p>
+          </button>
         </div>
         <div className="flex justify-end gap-1">
           <button
@@ -3560,6 +3600,18 @@ function GroupGallery({
           </button>
         </div>
       </div>
+
+      {membersOpen ? (
+        <GroupMembersSheet
+          group={group}
+          members={members}
+          onClose={() => setMembersOpen(false)}
+          onOpenProfile={(member) => {
+            setMembersOpen(false);
+            onOpenProfile(member.id, member.displayName);
+          }}
+        />
+      ) : null}
 
       {inviteOpen ? (
         <MemberPanel
@@ -3595,6 +3647,70 @@ function GroupGallery({
         <EmptyPanel title="No group photos yet" body="Photos appear here only when they are shared to this group." />
       )}
     </section>
+  );
+}
+
+function GroupMembersSheet({
+  group,
+  members,
+  onClose,
+  onOpenProfile
+}: {
+  group: Group;
+  members: GroupMember[];
+  onClose: () => void;
+  onOpenProfile: (member: GroupMember) => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-end bg-black/30 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-ink backdrop-blur-sm dark:bg-black/55 sm:items-center"
+      onClick={onClose}
+    >
+      <section
+        className="mx-auto w-full max-w-lg rounded-t-2xl border border-white/70 bg-white p-4 shadow-soft dark:border-white/15 dark:bg-[#242420] dark:text-paper sm:rounded-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">{group.name}</h2>
+            <p className="text-xs text-ink/55 dark:text-paper/55">
+              {members.length || group.member_count} {(members.length || group.member_count) === 1 ? "member" : "members"}
+            </p>
+          </div>
+          <button
+            aria-label="Close members"
+            className="grid h-9 w-9 place-items-center rounded-full border border-line dark:border-white/15"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={17} />
+          </button>
+        </div>
+        {members.length ? (
+          <div className="grid max-h-[55vh] gap-2 overflow-y-auto overscroll-contain">
+            {members.map((member) => (
+              <button
+                key={member.id}
+                className="flex items-center gap-3 rounded-lg px-1 py-2 text-left transition hover:bg-paper dark:hover:bg-white/5"
+                onClick={() => onOpenProfile(member)}
+                type="button"
+              >
+                <Avatar name={member.displayName} src={member.avatarUrl} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold">{member.username}</p>
+                  <p className="truncate text-sm text-ink/55 dark:text-paper/55">{member.displayName}</p>
+                </div>
+                <span className="rounded-full border border-line px-2.5 py-1 text-xs capitalize text-ink/60 dark:border-white/15 dark:text-paper/60">
+                  {member.role}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="py-8 text-center text-sm text-ink/55 dark:text-paper/55">Members will appear here after refresh.</p>
+        )}
+      </section>
+    </div>
   );
 }
 
