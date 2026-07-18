@@ -221,6 +221,8 @@ function isTransientMessage(message: string) {
     "Dark mode on.",
     "Dark mode off.",
     "Invite link copied.",
+    "Invite link created. Tap the link to copy it manually.",
+    "Select and copy the link manually.",
     "Invite declined."
   ].includes(message) ||
     message.startsWith("Invite sent to ") ||
@@ -3417,6 +3419,7 @@ function GroupPanel({
                   <MemberPanel
                     group={group}
                     notifyGroupMembers={notifyGroupMembers}
+                    onDone={() => setInviteGroupId(null)}
                     profile={profile}
                     reload={reload}
                     setMessage={setMessage}
@@ -3598,6 +3601,7 @@ function GroupGallery({
         <MemberPanel
           group={group}
           notifyGroupMembers={notifyGroupMembers}
+          onDone={() => setInviteOpen(false)}
           profile={profile}
           reload={reload}
           setMessage={setMessage}
@@ -3698,12 +3702,14 @@ function GroupMembersSheet({
 function MemberPanel({
   group,
   notifyGroupMembers,
+  onDone,
   profile,
   reload,
   setMessage
 }: {
   group: Group;
   notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
+  onDone?: () => void;
   profile: Profile;
   reload: WorkspaceReload;
   setMessage: (value: string) => void;
@@ -3781,6 +3787,7 @@ function MemberPanel({
     setInviteLink(inviteUrl);
     const copied = await copyText(inviteUrl);
     setMessage(copied ? "Invite link copied." : "Invite link created. Tap the link to copy it manually.");
+    if (copied) onDone?.();
     setBusyLink(false);
   }
 
@@ -3837,7 +3844,12 @@ function MemberPanel({
           />
           <button
             className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-paper dark:bg-paper dark:text-ink"
-            onClick={() => void copyText(inviteLink).then((copied) => setMessage(copied ? "Invite link copied." : "Select and copy the link manually."))}
+            onClick={() =>
+              void copyText(inviteLink).then((copied) => {
+                setMessage(copied ? "Invite link copied." : "Select and copy the link manually.");
+                if (copied) onDone?.();
+              })
+            }
             type="button"
           >
             Copy shown link
