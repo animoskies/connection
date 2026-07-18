@@ -75,12 +75,14 @@ create table if not exists public.group_notifications (
   user_id uuid not null references public.profiles(id) on delete cascade,
   actor_id uuid references public.profiles(id) on delete set null,
   message text not null,
+  metadata jsonb not null default '{}'::jsonb,
   read_at timestamptz,
   created_at timestamptz not null default now()
 );
 
 alter table public.group_notifications
   add column if not exists actor_id uuid references public.profiles(id) on delete set null,
+  add column if not exists metadata jsonb not null default '{}'::jsonb,
   add column if not exists read_at timestamptz;
 
 create index if not exists group_notifications_user_id_idx on public.group_notifications(user_id, read_at, created_at desc);
@@ -355,7 +357,7 @@ as $$
   order by gi.created_at desc;
 $$;
 
-create or replace function public.notify_group_members(target_group_id uuid, notification_message text)
+create or replace function public.notify_group_members(target_group_id uuid, notification_message text, notification_metadata jsonb default '{}'::jsonb)
 returns void
 language plpgsql
 security definer
@@ -370,8 +372,8 @@ begin
     raise exception 'Only group members can notify this group';
   end if;
 
-  insert into public.group_notifications (group_id, user_id, actor_id, message)
-  select target_group_id, gm.user_id, auth.uid(), notification_message
+  insert into public.group_notifications (group_id, user_id, actor_id, message, metadata)
+  select target_group_id, gm.user_id, auth.uid(), notification_message, coalesce(notification_metadata, '{}'::jsonb)
   from public.group_members gm
   where gm.group_id = target_group_id
     and gm.user_id <> auth.uid();
@@ -387,6 +389,7 @@ returns table (
   group_name text,
   actor_name text,
   message text,
+  metadata jsonb,
   read_at timestamptz,
   created_at timestamptz
 )
@@ -401,6 +404,7 @@ as $$
     g.name,
     coalesce(p.display_name, p.username),
     gn.message,
+    gn.metadata,
     gn.read_at,
     gn.created_at
   from public.group_notifications gn

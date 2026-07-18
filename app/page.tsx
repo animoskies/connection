@@ -98,6 +98,7 @@ type GroupNotification = {
   groupName: string;
   actorName: string;
   message: string;
+  metadata: Record<string, unknown>;
   readAt: string | null;
   createdAt: string;
 };
@@ -147,6 +148,7 @@ type GroupNotificationRow = {
   group_name: string | null;
   actor_name: string | null;
   message: string;
+  metadata: Record<string, unknown> | null;
   read_at: string | null;
   created_at: string;
 };
@@ -242,6 +244,7 @@ function mapGroupNotification(row: GroupNotificationRow): GroupNotification {
     groupName: row.group_name ?? "Group",
     actorName: row.actor_name ?? "Someone",
     message: row.message,
+    metadata: row.metadata ?? {},
     readAt: row.read_at,
     createdAt: row.created_at
   };
@@ -294,6 +297,39 @@ function groupPhotosByDate(photos: PhotoItem[]) {
     groups.set(label, [...(groups.get(label) ?? []), photo]);
   });
   return Array.from(groups.entries());
+}
+
+function eventChangeSummary(previousEvent: EventItem | null, nextEvent: {
+  title: string;
+  description: string | null;
+  location: string | null;
+  starts_at_utc: string | null;
+  source_timezone: string;
+}) {
+  if (!previousEvent) return "New event";
+  const changes: string[] = [];
+
+  if (previousEvent.title !== nextEvent.title) {
+    changes.push(`Title: ${previousEvent.title} -> ${nextEvent.title}`);
+  }
+
+  if ((previousEvent.location ?? "") !== (nextEvent.location ?? "")) {
+    changes.push(`Location: ${previousEvent.location || "None"} -> ${nextEvent.location || "None"}`);
+  }
+
+  if ((previousEvent.description ?? "") !== (nextEvent.description ?? "")) {
+    changes.push("Description changed");
+  }
+
+  if (previousEvent.starts_at_utc !== nextEvent.starts_at_utc || previousEvent.source_timezone !== nextEvent.source_timezone) {
+    const before = sourceDateTime(previousEvent).toFormat("LLL d, h:mm a");
+    const after = nextEvent.starts_at_utc
+      ? DateTime.fromISO(nextEvent.starts_at_utc, { zone: "utc" }).setZone(nextEvent.source_timezone).toFormat("LLL d, h:mm a")
+      : "Updated time";
+    changes.push(`Date/time: ${before} -> ${after}`);
+  }
+
+  return changes.length ? changes.join(" • ") : "Details refreshed";
 }
 
 function dataUrlToBlob(dataUrl: string) {
@@ -406,6 +442,7 @@ export default function Home() {
   const [refreshing, setRefreshing] = useState(false);
   const [view, setView] = useState<ViewMode>("agenda");
   const [selectedDate, setSelectedDate] = useState(DateTime.now().toISODate());
+  const [calendarEventToOpenId, setCalendarEventToOpenId] = useState<string | null>(null);
   const [loading, setLoading] = useState(hasSupabaseConfig);
   const [message, setMessage] = useState("");
   const [darkMode, setDarkMode] = useState(false);
@@ -720,12 +757,13 @@ export default function Home() {
     setGroupNotifications(((data ?? []) as GroupNotificationRow[]).map(mapGroupNotification));
   }
 
-  async function notifyGroupMembers(groupId: string, notificationMessage: string) {
+  async function notifyGroupMembers(groupId: string, notificationMessage: string, metadata: Record<string, unknown> = {}) {
     if (!supabase) return;
 
     const { error } = await supabase.rpc("notify_group_members", {
       target_group_id: groupId,
-      notification_message: notificationMessage
+      notification_message: notificationMessage,
+      notification_metadata: metadata
     });
 
     if (error) {
@@ -750,6 +788,27 @@ export default function Home() {
         notification.id === notificationId ? { ...notification, readAt: new Date().toISOString() } : notification
       )
     );
+  }
+
+  function openGroupNotification(notification: GroupNotification) {
+    const type = notification.metadata.type;
+    const action = notification.metadata.action;
+    const eventId = typeof notification.metadata.eventId === "string" ? notification.metadata.eventId : null;
+    const eventDate = typeof notification.metadata.eventDate === "string" ? notification.metadata.eventDate : null;
+    const groupId = typeof notification.metadata.groupId === "string" ? notification.metadata.groupId : notification.groupId;
+
+    setNotificationsOpen(false);
+
+    if (type === "calendar_event") {
+      setCalendarGroupId(groupId);
+      if (eventDate) setSelectedDate(eventDate);
+      if (eventId && action !== "deleted") setCalendarEventToOpenId(eventId);
+      setActiveTab("calendar");
+      return;
+    }
+
+    setActiveGroupId(notification.groupId);
+    setActiveTab("groups");
   }
 
   async function loadConnections() {
@@ -1203,11 +1262,7 @@ export default function Home() {
                 onAcceptGroup={(token) => void acceptInvite(token)}
                 onDeclineConnection={(requesterId) => void declineConnectionRequest(requesterId)}
                 onDeclineGroup={(token) => void declineInvite(token)}
-                onOpenGroupNotification={(groupId) => {
-                  setNotificationsOpen(false);
-                  setActiveGroupId(groupId);
-                  setActiveTab("groups");
-                }}
+                onOpenGroupNotification={openGroupNotification}
                 onReadGroupNotification={(notificationId) => void markGroupNotificationRead(notificationId)}
               />
             ) : null}
@@ -1294,6 +1349,7 @@ export default function Home() {
           <CalendarView
             calendarGroup={calendarGroup}
             calendarGroupId={calendarGroupId}
+            eventToOpenId={calendarEventToOpenId}
             events={calendarEvents}
             groups={groups}
             profile={profile}
@@ -1301,6 +1357,7 @@ export default function Home() {
             selectedDayEvents={selectedDayEvents}
             selectedDate={selectedDate}
             setCalendarGroupId={setCalendarGroupId}
+            setEventToOpenId={setCalendarEventToOpenId}
             setMessage={setMessage}
             setSelectedDate={setSelectedDate}
             setView={setView}
@@ -1584,7 +1641,7 @@ function GroupsView({
   activeGroup: Group | null;
   activeGroupId: string | null;
   groups: Group[];
-  notifyGroupMembers: (groupId: string, message: string) => Promise<void>;
+  notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   onOpenProfile: (profileId: string, displayName?: string) => void;
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
@@ -1702,6 +1759,7 @@ function ProfileView({
 function CalendarView({
   calendarGroup,
   calendarGroupId,
+  eventToOpenId,
   events,
   groups,
   notifyGroupMembers,
@@ -1710,6 +1768,7 @@ function CalendarView({
   selectedDayEvents,
   selectedDate,
   setCalendarGroupId,
+  setEventToOpenId,
   setMessage,
   setSelectedDate,
   setView,
@@ -1718,14 +1777,16 @@ function CalendarView({
 }: {
   calendarGroup: Group | null;
   calendarGroupId: string;
+  eventToOpenId: string | null;
   events: EventItem[];
   groups: Group[];
-  notifyGroupMembers: (groupId: string, message: string) => Promise<void>;
+  notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   profile: Profile;
   reload: WorkspaceReload;
   selectedDayEvents: EventItem[];
   selectedDate: string;
   setCalendarGroupId: (id: string) => void;
+  setEventToOpenId: (id: string | null) => void;
   setMessage: (value: string) => void;
   setSelectedDate: (value: string) => void;
   setView: (view: ViewMode) => void;
@@ -1747,6 +1808,16 @@ function CalendarView({
     if (eventModalOpen || editingEvent) return;
     setEventGroupId(writableGroup?.id ?? "");
   }, [eventModalOpen, editingEvent, writableGroup?.id]);
+
+  useEffect(() => {
+    if (!eventToOpenId) return;
+    const event = events.find((item) => item.id === eventToOpenId);
+    if (!event) return;
+    setEditingEventId(event.id);
+    setEventGroupId(event.group_id);
+    setEventModalOpen(true);
+    setEventToOpenId(null);
+  }, [eventToOpenId, events, setEventToOpenId]);
 
   function openAddEvent() {
     const defaultGroup =
@@ -1773,7 +1844,20 @@ function CalendarView({
     }
     if (editingEventId === event.id) setEditingEventId(null);
     const eventGroup = groups.find((group) => group.id === event.group_id);
-    await notifyGroupMembers(event.group_id, `${profile.display_name} deleted ${event.title}${eventGroup ? ` from ${eventGroup.name}` : ""}.`);
+    const eventDate = localDateTime(event, profile.preferred_timezone).toISODate() ?? selectedDate;
+    await notifyGroupMembers(
+      event.group_id,
+      `${profile.display_name} deleted ${event.title}${eventGroup ? ` from ${eventGroup.name}` : ""}.`,
+      {
+        type: "calendar_event",
+        action: "deleted",
+        eventId: event.id,
+        eventTitle: event.title,
+        eventDate,
+        groupId: event.group_id,
+        summary: "Event deleted"
+      }
+    );
     await reload();
     setMessage("Calendar event deleted successfully.");
   }
@@ -2151,7 +2235,7 @@ function NotificationCenter({
   onAcceptGroup: (token: string) => void;
   onDeclineConnection: (requesterId: string) => void;
   onDeclineGroup: (token: string) => void;
-  onOpenGroupNotification: (groupId: string) => void;
+  onOpenGroupNotification: (notification: GroupNotification) => void;
   onReadGroupNotification: (notificationId: string) => void;
 }) {
   const unreadGroupNotifications = groupNotifications.filter((notification) => !notification.readAt);
@@ -2173,10 +2257,15 @@ function NotificationCenter({
                 {notification.readAt ? <span className="text-[0.68rem] uppercase tracking-[0.16em] text-ink/35 dark:text-paper/35">Read</span> : null}
               </div>
               <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">{notification.message}</p>
+              {typeof notification.metadata.summary === "string" ? (
+                <p className="mt-2 rounded-md bg-white px-2 py-1.5 text-xs leading-5 text-ink/55 dark:bg-[#242420] dark:text-paper/55">
+                  {notification.metadata.summary}
+                </p>
+              ) : null}
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <button
                   className="rounded-full bg-ink px-3 py-2 text-sm font-medium text-paper dark:bg-paper dark:text-ink"
-                  onClick={() => onOpenGroupNotification(notification.groupId)}
+                  onClick={() => onOpenGroupNotification(notification)}
                   type="button"
                 >
                   Open
@@ -2698,7 +2787,7 @@ function GroupPanel({
 }: {
   groups: Group[];
   activeGroupId: string | null;
-  notifyGroupMembers: (groupId: string, message: string) => Promise<void>;
+  notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   photos: PhotoItem[];
   profile: Profile;
   setActiveGroupId: (value: string | null) => void;
@@ -3090,7 +3179,7 @@ function GroupGallery({
   setActiveGroupId
 }: {
   group: Group;
-  notifyGroupMembers: (groupId: string, message: string) => Promise<void>;
+  notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   onOpenProfile: (profileId: string, displayName?: string) => void;
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
@@ -3169,7 +3258,7 @@ function MemberPanel({
   setMessage
 }: {
   group: Group;
-  notifyGroupMembers: (groupId: string, message: string) => Promise<void>;
+  notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   profile: Profile;
   reload: WorkspaceReload;
   setMessage: (value: string) => void;
@@ -3481,7 +3570,7 @@ function EventForm({
   editingEvent: EventItem | null;
   group: Group;
   groups: Group[];
-  notifyGroupMembers: (groupId: string, message: string) => Promise<void>;
+  notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   onCancelEdit: () => void;
   onGroupChange: (groupId: string) => void;
   onSaved: (groupId: string, selectedDate: string) => void;
@@ -3530,13 +3619,22 @@ function EventForm({
       source_timezone: timezone
     };
 
-    const { error } = editingEvent
-      ? await supabase.from("events").update({ ...payload, group_id: group.id }).eq("id", editingEvent.id)
-      : await supabase.from("events").insert({
-          ...payload,
-          group_id: group.id,
-          creator_id: profile.id
-        });
+    const { data: savedEvent, error } = editingEvent
+      ? await supabase
+          .from("events")
+          .update({ ...payload, group_id: group.id })
+          .eq("id", editingEvent.id)
+          .select("*")
+          .single()
+      : await supabase
+          .from("events")
+          .insert({
+            ...payload,
+            group_id: group.id,
+            creator_id: profile.id
+          })
+          .select("*")
+          .single();
 
     if (error) {
       setMessage(`Failed to save calendar event. ${error.message}`);
@@ -3544,10 +3642,26 @@ function EventForm({
     }
 
     const action = editingEvent ? "updated" : "added";
-    await notifyGroupMembers(group.id, `${profile.display_name} ${action} ${payload.title} in ${group.name}.`);
+    const changeSummary = eventChangeSummary(editingEvent, payload);
     const savedLocalDate = DateTime.fromISO(payload.starts_at_utc ?? "", { zone: "utc" })
       .setZone(profile.preferred_timezone)
       .toISODate();
+    const eventTime = DateTime.fromISO(payload.starts_at_utc ?? "", { zone: "utc" })
+      .setZone(profile.preferred_timezone)
+      .toFormat("LLL d, h:mm a");
+    await notifyGroupMembers(
+      group.id,
+      `${profile.display_name} ${action} ${payload.title} in ${group.name}.`,
+      {
+        type: "calendar_event",
+        action,
+        eventId: savedEvent?.id ?? editingEvent?.id,
+        eventTitle: payload.title,
+        eventDate: savedLocalDate ?? date,
+        groupId: group.id,
+        summary: editingEvent ? changeSummary : `Scheduled for ${eventTime}`
+      }
+    );
     onSaved(group.id, savedLocalDate ?? date);
     setTitle("");
     setDescription("");
