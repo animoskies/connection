@@ -1129,7 +1129,6 @@ export default function Home() {
 
         {activeTab === "connections" ? (
           <ConnectionsView
-            connections={connections}
             openPhoto={openPhoto}
             photos={connectionPhotos}
             searchResults={connectionSearchResults}
@@ -1175,7 +1174,19 @@ export default function Home() {
         ) : null}
 
         {activeTab === "profile" ? (
-          <ProfileView openPhoto={openPhoto} photos={allPhotos} profile={profile} setAccountOpen={setAccountOpen} />
+          <ProfileView
+            connections={connections}
+            groups={groups}
+            openPhoto={openPhoto}
+            photos={allPhotos}
+            profile={profile}
+            setAccountOpen={setAccountOpen}
+            onOpenConnection={(profileId) => {
+              setSelectedConnectionId(profileId);
+              setActiveTab("connections");
+            }}
+            onOpenGroups={() => setActiveTab("groups")}
+          />
         ) : null}
       </div>
 
@@ -1238,7 +1249,6 @@ function GalleryView({
 }
 
 function ConnectionsView({
-  connections,
   openPhoto,
   photos,
   searchResults,
@@ -1249,7 +1259,6 @@ function ConnectionsView({
   onSearch,
   onSendRequest
 }: {
-  connections: ConnectionProfile[];
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
   searchResults: ConnectionProfile[];
@@ -1342,33 +1351,6 @@ function ConnectionsView({
         </section>
       ) : null}
 
-      {connections.length ? (
-        <section>
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-[0.16em] text-ink/45 dark:text-paper/45">
-            Your people
-          </h2>
-          <div className="grid gap-3">
-            {connections.map((connection) => (
-              <button
-                key={connection.id}
-                className="flex items-center gap-3 rounded-lg border border-white/70 bg-white/85 p-3 text-left shadow-sm dark:border-white/15 dark:bg-[#242420]"
-                onClick={() => onOpenProfile(connection.id)}
-                type="button"
-              >
-                <Avatar name={connection.displayName} src={connection.avatarUrl} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold">{connection.displayName}</p>
-                  <p className="truncate text-sm text-ink/55 dark:text-paper/55">@{connection.username}</p>
-                </div>
-                <span className="text-xs text-ink/45 dark:text-paper/45">View</span>
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : (
-        <EmptyPanel title="No connections yet" body="Search a username and send your first request." />
-      )}
-
       {photos.length ? (
         <section className="flex flex-col gap-7">
           <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-ink/45 dark:text-paper/45">
@@ -1393,6 +1375,8 @@ function ConnectionsView({
         );
       })}
         </section>
+      ) : query.trim().length < 2 ? (
+        <EmptyPanel title="No shared feed yet" body="Search a username to connect with someone." />
       ) : null}
     </section>
   );
@@ -1497,17 +1481,26 @@ function GroupsView({
 }
 
 function ProfileView({
+  connections,
+  groups,
   openPhoto,
   photos,
   profile,
-  setAccountOpen
+  setAccountOpen,
+  onOpenConnection,
+  onOpenGroups
 }: {
+  connections: ConnectionProfile[];
+  groups: Group[];
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
   profile: Profile;
   setAccountOpen: (value: boolean) => void;
+  onOpenConnection: (profileId: string) => void;
+  onOpenGroups: () => void;
 }) {
   const ownPhotos = photos.filter((photo) => photo.ownerId === profile.id);
+  const [showConnections, setShowConnections] = useState(false);
 
   return (
     <section className="flex flex-col gap-4">
@@ -1515,12 +1508,48 @@ function ProfileView({
         <Avatar name={profile.display_name} src={profile.avatar_url ?? ""} size="lg" className="mx-auto" />
         <h1 className="mt-3 text-2xl font-semibold">{profile.display_name}</h1>
         <p className="text-sm text-ink/55 dark:text-paper/55">@{profile.username}</p>
-        <p className="mt-1 text-sm text-ink/55 dark:text-paper/55">{ownPhotos.length} photos</p>
+        <div className="mt-4 grid grid-cols-3 divide-x divide-line rounded-lg border border-line bg-paper/70 text-center dark:divide-white/15 dark:border-white/15 dark:bg-[#1d1d1a]">
+          <button className="px-2 py-3" onClick={() => setShowConnections(false)} type="button">
+            <span className="block text-lg font-semibold">{ownPhotos.length}</span>
+            <span className="text-xs text-ink/55 dark:text-paper/55">Photos</span>
+          </button>
+          <button className="px-2 py-3" onClick={() => setShowConnections((value) => !value)} type="button">
+            <span className="block text-lg font-semibold">{connections.length}</span>
+            <span className="text-xs text-ink/55 dark:text-paper/55">Connections</span>
+          </button>
+          <button className="px-2 py-3" onClick={onOpenGroups} type="button">
+            <span className="block text-lg font-semibold">{groups.length}</span>
+            <span className="text-xs text-ink/55 dark:text-paper/55">Groups</span>
+          </button>
+        </div>
         <button className="mt-4 rounded-full border border-line px-4 py-2 text-sm" onClick={() => setAccountOpen(true)}>
           Settings
         </button>
       </div>
-      {ownPhotos.length ? (
+
+      {showConnections ? (
+        connections.length ? (
+          <section className="grid gap-3">
+            {connections.map((connection) => (
+              <button
+                key={connection.id}
+                className="flex items-center gap-3 rounded-lg border border-white/70 bg-white/85 p-3 text-left shadow-sm dark:border-white/15 dark:bg-[#242420]"
+                onClick={() => onOpenConnection(connection.id)}
+                type="button"
+              >
+                <Avatar name={connection.displayName} src={connection.avatarUrl} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold">{connection.displayName}</p>
+                  <p className="truncate text-sm text-ink/55 dark:text-paper/55">@{connection.username}</p>
+                </div>
+                <span className="text-xs text-ink/45 dark:text-paper/45">View</span>
+              </button>
+            ))}
+          </section>
+        ) : (
+          <EmptyPanel title="No connections yet" body="Search usernames from the Connections tab." />
+        )
+      ) : ownPhotos.length ? (
         <PhotoSection label="Your photos" openPhoto={openPhoto} photos={ownPhotos} sourcePhotos={ownPhotos} />
       ) : (
         <EmptyPanel title="No photos yet" body="Your captured photos will live here." />
