@@ -437,7 +437,7 @@ export default function Home() {
     if (!sessionUserId || !message || !isTransientMessage(message)) return;
     const timeout = window.setTimeout(() => {
       setMessage((currentMessage) => (currentMessage === message ? "" : currentMessage));
-    }, 3200);
+    }, 1800);
     return () => window.clearTimeout(timeout);
   }, [message, sessionUserId]);
 
@@ -1064,6 +1064,13 @@ export default function Home() {
 
     setPhotos((currentPhotos) => [payload.photo, ...currentPhotos]);
     setViewerPhotoIds([payload.photo.id]);
+    if (target.type === "group") {
+      setActiveGroupId(target.groupId);
+      setActiveTab("groups");
+    } else {
+      setSelectedConnectionId(null);
+      setActiveTab("connections");
+    }
     setSelectedPhotoId(payload.photo.id);
     setPendingCaptureSrc(null);
     if (target.type === "group") {
@@ -1225,7 +1232,7 @@ export default function Home() {
         </header>
 
         {message ? (
-          <div className="rounded-md border border-rust/40 bg-rust/15 px-4 py-3 text-sm text-rust dark:text-[#ffb49a]">
+          <div className="fixed left-1/2 top-5 z-50 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 rounded-full border border-line bg-white px-4 py-3 text-center text-sm font-medium text-ink shadow-soft dark:border-white/15 dark:bg-[#242420] dark:text-paper">
             {message}
           </div>
         ) : null}
@@ -1654,7 +1661,6 @@ function ProfileView({
                   <p className="truncate font-semibold">{connection.displayName}</p>
                   <p className="truncate text-sm text-ink/55 dark:text-paper/55">@{connection.username}</p>
                 </div>
-                <span className="text-xs text-ink/45 dark:text-paper/45">View</span>
               </button>
             ))}
           </section>
@@ -1828,6 +1834,10 @@ function CalendarView({
             groups={editableGroups}
             onCancelEdit={closeEventModal}
             onGroupChange={setEventGroupId}
+            onSaved={(savedGroupId, savedDate) => {
+              setCalendarGroupId(savedGroupId);
+              setSelectedDate(savedDate);
+            }}
             notifyGroupMembers={notifyGroupMembers}
             profile={profile}
             reload={reload}
@@ -3433,6 +3443,7 @@ function EventForm({
   notifyGroupMembers,
   onCancelEdit,
   onGroupChange,
+  onSaved,
   profile,
   selectedDate,
   reload,
@@ -3444,6 +3455,7 @@ function EventForm({
   notifyGroupMembers: (groupId: string, message: string) => Promise<void>;
   onCancelEdit: () => void;
   onGroupChange: (groupId: string) => void;
+  onSaved: (groupId: string, selectedDate: string) => void;
   profile: Profile;
   selectedDate: string;
   reload: WorkspaceReload;
@@ -3504,6 +3516,10 @@ function EventForm({
 
     const action = editingEvent ? "updated" : "added";
     await notifyGroupMembers(group.id, `${profile.display_name} ${action} ${payload.title} in ${group.name}.`);
+    const savedLocalDate = DateTime.fromISO(payload.starts_at_utc ?? "", { zone: "utc" })
+      .setZone(profile.preferred_timezone)
+      .toISODate();
+    onSaved(group.id, savedLocalDate ?? date);
     setTitle("");
     setDescription("");
     setLocation("");
