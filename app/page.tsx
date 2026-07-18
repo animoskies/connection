@@ -2771,7 +2771,7 @@ function ConnectionLogo({ className, compact = false }: { className?: string; co
   return (
     <div
       className={clsx(
-        "select-none text-center font-semibold lowercase tracking-normal text-ink dark:text-paper",
+        "select-none text-center font-bold tracking-normal text-ink dark:text-paper",
         compact ? "leading-none" : "text-3xl",
         className
       )}
@@ -2779,11 +2779,11 @@ function ConnectionLogo({ className, compact = false }: { className?: string; co
     >
       {compact ? (
         <span className="inline-flex items-baseline">
-          <span className="text-4xl leading-none sm:text-5xl">c</span>
-          <span className="text-3xl leading-none sm:text-4xl">onnection</span>
+          <span className="text-[2.8rem] leading-none sm:text-[3.4rem]">C</span>
+          <span className="text-[2.05rem] leading-none sm:text-[2.55rem]">onnection</span>
         </span>
       ) : (
-        "connection"
+        "Connection"
       )}
     </div>
   );
