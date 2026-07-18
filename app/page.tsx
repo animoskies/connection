@@ -2147,7 +2147,7 @@ function CalendarView({
       <div className="flex items-center justify-end">
         <div className="flex items-center gap-2">
         <select
-          className="min-w-0 flex-1 rounded-lg border border-white/70 bg-white/90 px-3 py-2 text-sm text-ink shadow-sm outline-none dark:border-white/15 dark:bg-[#242420] dark:text-paper sm:w-44"
+          className="min-w-0 flex-1 rounded-full border border-white/70 bg-white/90 px-4 py-2 text-sm font-medium text-ink shadow-sm outline-none dark:border-white/15 dark:bg-[#242420] dark:text-paper sm:w-44"
           value={calendarGroupId}
           onChange={(event) => setCalendarGroupId(event.target.value)}
         >
@@ -2160,7 +2160,7 @@ function CalendarView({
         </select>
           <button
             aria-label="Add event"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-white/70 bg-white/90 text-ink shadow-sm transition hover:bg-paper disabled:opacity-35 dark:border-white/15 dark:bg-[#242420] dark:text-paper"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/70 bg-white/90 text-ink shadow-sm transition hover:bg-paper disabled:opacity-35 dark:border-white/15 dark:bg-[#242420] dark:text-paper"
             disabled={!editableGroups.length}
             onClick={openAddEvent}
             type="button"
@@ -3235,7 +3235,7 @@ function GroupPanel({
     <section>
       <div className="mb-5 flex items-center justify-end">
         <button
-          className="text-sm font-semibold text-ink transition hover:text-ink/70 dark:text-paper dark:hover:text-paper/70"
+          className="rounded-full border border-line bg-white/80 px-4 py-2 text-sm font-semibold text-ink shadow-sm transition hover:bg-paper dark:border-white/15 dark:bg-[#242420] dark:text-paper"
           onClick={() => {
             setInviteGroupId(null);
             setActionGroupId(null);
