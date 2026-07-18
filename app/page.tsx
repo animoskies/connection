@@ -90,6 +90,15 @@ type GroupInvite = {
   createdAt: string;
 };
 
+type GroupNotification = {
+  id: string;
+  groupId: string;
+  groupName: string;
+  actorName: string;
+  message: string;
+  createdAt: string;
+};
+
 type ConnectionRelationship = "none" | "pending_sent" | "pending_received" | "connected" | "self";
 
 type ConnectionProfile = {
@@ -129,6 +138,15 @@ type PendingGroupInviteRow = {
   created_at: string;
 };
 
+type GroupNotificationRow = {
+  id: string;
+  group_id: string;
+  group_name: string | null;
+  actor_name: string | null;
+  message: string;
+  created_at: string;
+};
+
 type ConnectionProfileRow = {
   id: string;
   username: string;
@@ -162,7 +180,7 @@ type ShareTarget =
 
 function isTransientMessage(message: string) {
   return [
-    "Latest photos, groups, invites, and calendar loaded.",
+    "Latest photos, groups, invites, notifications, and calendar loaded.",
     "Photo posted to group.",
     "Photo posted to connections.",
     "Photo deleted.",
@@ -204,6 +222,17 @@ function mapConnectionRequest(row: ConnectionRequestRow): ConnectionRequest {
     displayName: row.display_name,
     preferredTimezone: row.preferred_timezone,
     avatarUrl: row.avatar_url ?? "",
+    createdAt: row.created_at
+  };
+}
+
+function mapGroupNotification(row: GroupNotificationRow): GroupNotification {
+  return {
+    id: row.id,
+    groupId: row.group_id,
+    groupName: row.group_name ?? "Group",
+    actorName: row.actor_name ?? "Someone",
+    message: row.message,
     createdAt: row.created_at
   };
 }
@@ -350,6 +379,7 @@ export default function Home() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupInvites, setGroupInvites] = useState<GroupInvite[]>([]);
+  const [groupNotifications, setGroupNotifications] = useState<GroupNotification[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<ConnectionRequest[]>([]);
   const [connections, setConnections] = useState<ConnectionProfile[]>([]);
   const [connectionSearchResults, setConnectionSearchResults] = useState<ConnectionProfile[]>([]);
@@ -509,6 +539,7 @@ export default function Home() {
       setProfile(null);
       setGroups([]);
       setGroupInvites([]);
+      setGroupNotifications([]);
       setConnectionRequests([]);
       setConnections([]);
       setConnectionSearchResults([]);
@@ -616,6 +647,7 @@ export default function Home() {
 
     await loadPhotos();
     await loadGroupInvites(userId);
+    await loadGroupNotifications();
     await loadConnections();
     await loadConnectionRequests();
 
@@ -627,7 +659,7 @@ export default function Home() {
     setRefreshing(true);
     try {
       await loadWorkspace(sessionUserId, { clearMessage: false });
-      setMessage("Latest photos, groups, invites, and calendar loaded.");
+      setMessage("Latest photos, groups, invites, notifications, and calendar loaded.");
     } finally {
       setRefreshing(false);
     }
@@ -656,6 +688,48 @@ export default function Home() {
         } as GroupInvite;
       })
     );
+  }
+
+  async function loadGroupNotifications() {
+    if (!supabase) return;
+
+    const { data, error } = await supabase.rpc("pending_group_notifications");
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setGroupNotifications(((data ?? []) as GroupNotificationRow[]).map(mapGroupNotification));
+  }
+
+  async function notifyGroupMembers(groupId: string, notificationMessage: string) {
+    if (!supabase) return;
+
+    const { error } = await supabase.rpc("notify_group_members", {
+      target_group_id: groupId,
+      notification_message: notificationMessage
+    });
+
+    if (error) {
+      setMessage(error.message);
+    }
+  }
+
+  async function markGroupNotificationRead(notificationId: string) {
+    if (!supabase) return;
+    setMessage("");
+
+    const { error } = await supabase.rpc("mark_group_notification_read", {
+      notification_id: notificationId
+    });
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setGroupNotifications((current) => current.filter((notification) => notification.id !== notificationId));
   }
 
   async function loadConnections() {
@@ -973,6 +1047,10 @@ export default function Home() {
     setViewerPhotoIds([payload.photo.id]);
     setSelectedPhotoId(payload.photo.id);
     setPendingCaptureSrc(null);
+    if (target.type === "group") {
+      const group = groups.find((item) => item.id === target.groupId);
+      await notifyGroupMembers(target.groupId, `${profile.display_name} posted a photo${group ? ` in ${group.name}` : ""}.`);
+    }
     setMessage(target.type === "group" ? "Photo posted to group." : "Photo posted to connections.");
     setPhotoUploading(false);
   }
@@ -1012,7 +1090,7 @@ export default function Home() {
   const calendarEvents =
     calendarGroupId === "all" ? events : events.filter((event) => event.group_id === calendarGroupId);
   const calendarGroup = groups.find((group) => group.id === calendarGroupId) ?? null;
-  const notificationCount = groupInvites.length + connectionRequests.length;
+  const notificationCount = groupInvites.length + connectionRequests.length + groupNotifications.length;
   const selectedConnection = connections.find((connection) => connection.id === selectedConnectionId) ?? null;
   const selectedDayEvents = useMemo(() => {
     return calendarEvents.filter((event) => localDateTime(event, preferredTimezone).toISODate() === selectedDate);
@@ -1073,11 +1151,13 @@ export default function Home() {
             {notificationsOpen ? (
               <NotificationCenter
                 connectionRequests={connectionRequests}
+                groupNotifications={groupNotifications}
                 invites={groupInvites}
                 onAcceptConnection={(requesterId) => void acceptConnectionRequest(requesterId)}
                 onAcceptGroup={(token) => void acceptInvite(token)}
                 onDeclineConnection={(requesterId) => void declineConnectionRequest(requesterId)}
                 onDeclineGroup={(token) => void declineInvite(token)}
+                onReadGroupNotification={(notificationId) => void markGroupNotificationRead(notificationId)}
               />
             ) : null}
             <label
@@ -1148,7 +1228,9 @@ export default function Home() {
             activeGroup={activeGroup}
             activeGroupId={activeGroupId}
             groups={groups}
+            notifyGroupMembers={notifyGroupMembers}
             photos={allPhotos}
+            profile={profile}
             reload={() => loadWorkspace()}
             setActiveGroupId={setActiveGroupId}
             setMessage={setMessage}
@@ -1170,6 +1252,7 @@ export default function Home() {
             setMessage={setMessage}
             setSelectedDate={setSelectedDate}
             setView={setView}
+            notifyGroupMembers={notifyGroupMembers}
             timezone={preferredTimezone}
             view={view}
           />
@@ -1438,8 +1521,10 @@ function GroupsView({
   activeGroup,
   activeGroupId,
   groups,
+  notifyGroupMembers,
   openPhoto,
   photos,
+  profile,
   reload,
   setActiveGroupId,
   setMessage
@@ -1447,8 +1532,10 @@ function GroupsView({
   activeGroup: Group | null;
   activeGroupId: string | null;
   groups: Group[];
+  notifyGroupMembers: (groupId: string, message: string) => Promise<void>;
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
+  profile: Profile;
   reload: WorkspaceReload;
   setActiveGroupId: (id: string | null) => void;
   setMessage: (value: string) => void;
@@ -1463,7 +1550,9 @@ function GroupsView({
         <GroupPanel
           activeGroupId={activeGroupId}
           groups={groups}
+          notifyGroupMembers={notifyGroupMembers}
           photos={photos}
+          profile={profile}
           reload={reload}
           setActiveGroupId={setActiveGroupId}
           setMessage={setMessage}
@@ -1471,8 +1560,10 @@ function GroupsView({
       ) : (
         <GroupGallery
           group={activeGroup}
+          notifyGroupMembers={notifyGroupMembers}
           openPhoto={openPhoto}
           photos={selectedGroupPhotos}
+          profile={profile}
           reload={reload}
           setActiveGroupId={setActiveGroupId}
           setMessage={setMessage}
@@ -1565,6 +1656,7 @@ function CalendarView({
   calendarGroupId,
   events,
   groups,
+  notifyGroupMembers,
   profile,
   reload,
   selectedDayEvents,
@@ -1580,6 +1672,7 @@ function CalendarView({
   calendarGroupId: string;
   events: EventItem[];
   groups: Group[];
+  notifyGroupMembers: (groupId: string, message: string) => Promise<void>;
   profile: Profile;
   reload: WorkspaceReload;
   selectedDayEvents: EventItem[];
@@ -1605,6 +1698,8 @@ function CalendarView({
       return;
     }
     if (editingEventId === event.id) setEditingEventId(null);
+    const eventGroup = groups.find((group) => group.id === event.group_id);
+    await notifyGroupMembers(event.group_id, `${profile.display_name} deleted ${event.title}${eventGroup ? ` from ${eventGroup.name}` : ""}.`);
     await reload();
     setMessage("Calendar event deleted.");
   }
@@ -1667,6 +1762,7 @@ function CalendarView({
             editingEvent={editingEvent}
             group={formGroup}
             onCancelEdit={() => setEditingEventId(null)}
+            notifyGroupMembers={notifyGroupMembers}
             profile={profile}
             reload={reload}
             selectedDate={selectedDate}
@@ -1939,20 +2035,24 @@ function SharePhotoSheet({
 
 function NotificationCenter({
   connectionRequests,
+  groupNotifications,
   invites,
   onAcceptConnection,
   onAcceptGroup,
   onDeclineConnection,
-  onDeclineGroup
+  onDeclineGroup,
+  onReadGroupNotification
 }: {
   connectionRequests: ConnectionRequest[];
+  groupNotifications: GroupNotification[];
   invites: GroupInvite[];
   onAcceptConnection: (requesterId: string) => void;
   onAcceptGroup: (token: string) => void;
   onDeclineConnection: (requesterId: string) => void;
   onDeclineGroup: (token: string) => void;
+  onReadGroupNotification: (notificationId: string) => void;
 }) {
-  const total = invites.length + connectionRequests.length;
+  const total = invites.length + connectionRequests.length + groupNotifications.length;
 
   return (
     <section className="absolute right-0 top-12 z-20 w-[min(23rem,calc(100vw-2rem))] rounded-lg border border-line bg-white p-4 text-left shadow-soft dark:border-white/15 dark:bg-[#242420]">
@@ -1962,6 +2062,19 @@ function NotificationCenter({
       </div>
       {total ? (
         <div className="grid gap-3">
+          {groupNotifications.map((notification) => (
+            <article key={notification.id} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
+              <p className="text-sm font-semibold">{notification.groupName}</p>
+              <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">{notification.message}</p>
+              <button
+                className="mt-3 w-full rounded-full border border-line px-3 py-2 text-sm font-medium dark:border-white/15"
+                onClick={() => onReadGroupNotification(notification.id)}
+                type="button"
+              >
+                Done
+              </button>
+            </article>
+          ))}
           {connectionRequests.map((request) => (
             <article key={request.requesterId} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
               <div className="flex items-center gap-3">
@@ -2015,7 +2128,7 @@ function NotificationCenter({
           ))}
         </div>
       ) : (
-        <p className="text-sm text-ink/60 dark:text-paper/60">No pending invites.</p>
+        <p className="text-sm text-ink/60 dark:text-paper/60">No new notifications.</p>
       )}
     </section>
   );
@@ -2459,14 +2572,18 @@ function AccountMenu({
 function GroupPanel({
   groups,
   activeGroupId,
+  notifyGroupMembers,
   photos,
+  profile,
   setActiveGroupId,
   reload,
   setMessage
 }: {
   groups: Group[];
   activeGroupId: string | null;
+  notifyGroupMembers: (groupId: string, message: string) => Promise<void>;
   photos: PhotoItem[];
+  profile: Profile;
   setActiveGroupId: (value: string | null) => void;
   reload: WorkspaceReload;
   setMessage: (value: string) => void;
@@ -2512,7 +2629,7 @@ function GroupPanel({
           .map((profile) => ({
             group_id: group.id,
             token: crypto.randomUUID().replaceAll("-", ""),
-            role: "viewer" as const,
+            role: "editor" as const,
             created_by: user.id,
             invitee_id: profile.id
           }));
@@ -2554,6 +2671,9 @@ function GroupPanel({
 
     setEditingGroupId(null);
     setEditingName("");
+    if (group.name !== editingName.trim()) {
+      await notifyGroupMembers(group.id, `${profile.display_name} renamed ${group.name} to ${editingName.trim()}.`);
+    }
     await reload();
     setMessage("Group name updated.");
   }
@@ -2565,7 +2685,7 @@ function GroupPanel({
           <h1 className="text-2xl font-semibold">Groups</h1>
           <button
             aria-label="Add group"
-            className="grid h-9 w-9 place-items-center rounded-full border border-line bg-white/85 text-ink shadow-sm dark:border-white/15 dark:bg-[#242420] dark:text-paper"
+            className="grid h-8 w-8 place-items-center text-ink/75 transition hover:text-ink dark:text-paper/75 dark:hover:text-paper"
             onClick={() => {
               setInviteGroupId(null);
               setEditingGroupId(null);
@@ -2580,7 +2700,7 @@ function GroupPanel({
       </div>
 
       {addOpen ? (
-        <form className="mb-5 rounded-lg border border-white/70 bg-white/85 p-3 shadow-sm dark:border-white/15 dark:bg-[#242420]" onSubmit={createGroup}>
+        <form className="mb-5 rounded-lg border border-white/70 bg-white/90 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]" onSubmit={createGroup}>
           <div className="grid gap-3">
             <input
               className="rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
@@ -2591,7 +2711,7 @@ function GroupPanel({
             />
             <input
               className="rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
-              placeholder="Members by username, optional"
+              placeholder="Usernames, optional"
               value={memberNames}
               onChange={(event) => setMemberNames(event.target.value)}
             />
@@ -2607,13 +2727,13 @@ function GroupPanel({
         </form>
       ) : null}
 
-      <div className="divide-y divide-line/70 rounded-lg border border-white/70 bg-white/70 shadow-sm dark:divide-white/10 dark:border-white/15 dark:bg-[#242420]">
+      <div className="grid gap-3">
         {groups.map((group) => {
           const groupPhotos = photos.filter((photo) => photo.groupId === group.id);
           const latestPhoto = groupPhotos[0] ?? null;
           const isEditing = editingGroupId === group.id;
           return (
-            <article key={group.id} className="p-3">
+            <article key={group.id} className="rounded-lg border border-white/70 bg-white/90 p-3 shadow-sm backdrop-blur dark:border-white/15 dark:bg-[#242420]">
               {isEditing ? (
                 <form className="flex items-center gap-2" onSubmit={(event) => void renameGroup(event, group)}>
                   <GroupThumb groupId={group.id} photos={photos} />
@@ -2637,22 +2757,22 @@ function GroupPanel({
                 </form>
               ) : (
                 <div className="grid grid-cols-[3.75rem_minmax(0,1fr)_auto] items-center gap-3">
-              <button
+                  <button
                     className="contents text-left"
-                onClick={() => setActiveGroupId(group.id)}
-                type="button"
-              >
-                <GroupThumb groupId={group.id} photos={photos} />
-                <span className="min-w-0">
-                  <span className="block truncate text-lg font-semibold">{group.name}</span>
-                  <span className="block truncate text-sm text-ink/55 dark:text-paper/55">
-                    {latestPhoto ? `${latestPhoto.owner} • ${photoTime(latestPhoto)}` : "No photos yet"}
-                  </span>
-                  <span className="block text-sm text-ink/55 dark:text-paper/55">
-                    {group.member_count} {group.member_count === 1 ? "member" : "members"}
-                  </span>
-                </span>
-              </button>
+                    onClick={() => setActiveGroupId(group.id)}
+                    type="button"
+                  >
+                    <GroupThumb groupId={group.id} photos={photos} />
+                    <span className="min-w-0">
+                      <span className="block truncate text-lg font-semibold">{group.name}</span>
+                      <span className="block truncate text-sm text-ink/55 dark:text-paper/55">
+                        {latestPhoto ? `${latestPhoto.owner} • ${photoTime(latestPhoto)}` : "No photos yet"}
+                      </span>
+                      <span className="block text-sm text-ink/55 dark:text-paper/55">
+                        {group.member_count} {group.member_count === 1 ? "member" : "members"}
+                      </span>
+                    </span>
+                  </button>
                   <div className="flex items-center gap-1">
                     {group.role === "owner" ? (
                       <button
@@ -2666,7 +2786,7 @@ function GroupPanel({
                     ) : null}
               <button
                 aria-label={`Invite to ${group.name}`}
-                      className="grid h-10 w-10 place-items-center rounded-full border border-line bg-white/75 dark:border-white/15 dark:bg-[#1d1d1a]"
+                    className="grid h-10 w-10 place-items-center rounded-full border border-line bg-white/75 dark:border-white/15 dark:bg-[#1d1d1a]"
                       onClick={() => {
                         setEditingGroupId(null);
                         setInviteGroupId((current) => (current === group.id ? null : group.id));
@@ -2680,7 +2800,13 @@ function GroupPanel({
               )}
               {inviteGroupId === group.id ? (
                 <div className="mt-3">
-                  <MemberPanel group={group} reload={reload} setMessage={setMessage} />
+                  <MemberPanel
+                    group={group}
+                    notifyGroupMembers={notifyGroupMembers}
+                    profile={profile}
+                    reload={reload}
+                    setMessage={setMessage}
+                  />
                 </div>
               ) : null}
             </article>
@@ -2703,15 +2829,19 @@ function GroupThumb({ groupId, photos }: { groupId: string; photos: PhotoItem[] 
 
 function GroupGallery({
   group,
+  notifyGroupMembers,
   openPhoto,
   photos,
+  profile,
   reload,
   setMessage,
   setActiveGroupId
 }: {
   group: Group;
+  notifyGroupMembers: (groupId: string, message: string) => Promise<void>;
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
+  profile: Profile;
   reload: WorkspaceReload;
   setMessage: (value: string) => void;
   setActiveGroupId: (id: string | null) => void;
@@ -2741,7 +2871,15 @@ function GroupGallery({
         </button>
       </div>
 
-      {inviteOpen ? <MemberPanel group={group} reload={reload} setMessage={setMessage} /> : null}
+      {inviteOpen ? (
+        <MemberPanel
+          group={group}
+          notifyGroupMembers={notifyGroupMembers}
+          profile={profile}
+          reload={reload}
+          setMessage={setMessage}
+        />
+      ) : null}
 
       {photos.length ? (
         owners.map((owner) => {
@@ -2768,15 +2906,18 @@ function GroupGallery({
 
 function MemberPanel({
   group,
+  notifyGroupMembers,
+  profile,
   reload,
   setMessage
 }: {
   group: Group;
+  notifyGroupMembers: (groupId: string, message: string) => Promise<void>;
+  profile: Profile;
   reload: WorkspaceReload;
   setMessage: (value: string) => void;
 }) {
   const [invite, setInvite] = useState("");
-  const [role, setRole] = useState<"editor" | "viewer">("viewer");
   const [busyLink, setBusyLink] = useState(false);
   const [inviteLink, setInviteLink] = useState("");
 
@@ -2785,13 +2926,13 @@ function MemberPanel({
     if (!supabase || !invite.trim()) return;
     setMessage("");
 
-    const { data: profile, error: profileError } = await supabase
+    const { data: inviteeProfile, error: profileError } = await supabase
       .from("profiles")
       .select("id")
       .eq("username", invite.trim())
       .maybeSingle();
 
-    if (profileError || !profile) {
+    if (profileError || !inviteeProfile) {
       setMessage(profileError?.message ?? "No profile found for that username.");
       return;
     }
@@ -2811,9 +2952,9 @@ function MemberPanel({
       .insert({
         group_id: group.id,
         token,
-        role,
+        role: "editor",
         created_by: user.id,
-        invitee_id: profile.id
+        invitee_id: inviteeProfile.id
       });
 
     if (error) {
@@ -2821,8 +2962,10 @@ function MemberPanel({
       return;
     }
 
+    await notifyGroupMembers(group.id, `${profile.display_name} invited @${invite.trim()} to ${group.name}.`);
     setInvite("");
     setMessage(`Invite sent to @${invite.trim()}.`);
+    await reload();
   }
 
   async function copyInviteLink() {
@@ -2844,7 +2987,7 @@ function MemberPanel({
     const { error } = await supabase.from("group_invites").insert({
       group_id: group.id,
       token,
-      role,
+      role: "editor",
       created_by: user.id
     });
 
@@ -2867,32 +3010,21 @@ function MemberPanel({
         <Shield size={18} />
         <h2 className="font-semibold">Invite</h2>
       </div>
-      <form className="flex flex-col gap-2" onSubmit={inviteMember}>
+      <form className="flex gap-2" onSubmit={inviteMember}>
         <input
-          className="rounded-full border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+          className="min-w-0 flex-1 rounded-full border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
           placeholder="Username"
           value={invite}
           onChange={(event) => setInvite(event.target.value)}
           disabled={group.role !== "owner"}
         />
-        <div className="flex gap-2">
-          <select
-            className="min-w-0 flex-1 rounded-full border border-line bg-white px-3 py-2 text-sm text-ink dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
-            value={role}
-            onChange={(event) => setRole(event.target.value as "editor" | "viewer")}
-            disabled={group.role !== "owner"}
-          >
-            <option value="viewer">Viewer</option>
-            <option value="editor">Editor</option>
-          </select>
-          <button
-            aria-label="Invite member"
-            disabled={group.role !== "owner"}
-            className="grid h-10 w-10 place-items-center rounded-full bg-rust text-ink disabled:opacity-40"
-          >
-            <Send size={16} />
-          </button>
-        </div>
+        <button
+          aria-label="Invite member"
+          disabled={group.role !== "owner"}
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-rust text-ink disabled:opacity-40"
+        >
+          <Send size={16} />
+        </button>
       </form>
       <button
         className="mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-line px-4 py-2.5 text-sm font-medium disabled:opacity-45 dark:border-white/15"
@@ -3078,6 +3210,7 @@ function EventList({
 function EventForm({
   editingEvent,
   group,
+  notifyGroupMembers,
   onCancelEdit,
   profile,
   selectedDate,
@@ -3086,6 +3219,7 @@ function EventForm({
 }: {
   editingEvent: EventItem | null;
   group: Group;
+  notifyGroupMembers: (groupId: string, message: string) => Promise<void>;
   onCancelEdit: () => void;
   profile: Profile;
   selectedDate: string;
@@ -3146,6 +3280,7 @@ function EventForm({
     }
 
     const action = editingEvent ? "updated" : "added";
+    await notifyGroupMembers(group.id, `${profile.display_name} ${action} ${payload.title} in ${group.name}.`);
     setTitle("");
     setDescription("");
     setLocation("");
