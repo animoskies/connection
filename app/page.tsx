@@ -303,6 +303,26 @@ export default function Home() {
   }, [darkMode]);
 
   useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+
+    const setKeyboardState = () => {
+      const keyboardOpen = viewport.height < window.innerHeight - 120;
+      document.body.classList.toggle("keyboard-open", keyboardOpen);
+    };
+
+    setKeyboardState();
+    viewport.addEventListener("resize", setKeyboardState);
+    viewport.addEventListener("scroll", setKeyboardState);
+
+    return () => {
+      viewport.removeEventListener("resize", setKeyboardState);
+      viewport.removeEventListener("scroll", setKeyboardState);
+      document.body.classList.remove("keyboard-open");
+    };
+  }, []);
+
+  useEffect(() => {
     if (!sessionUserId || !message || !isTransientMessage(message)) return;
     const timeout = window.setTimeout(() => {
       setMessage((currentMessage) => (currentMessage === message ? "" : currentMessage));
@@ -1228,7 +1248,7 @@ function BottomNav({
   ];
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-white/92 px-3 py-2 backdrop-blur dark:border-white/15 dark:bg-[#1d1d1a]/95">
+    <nav className="app-bottom-nav fixed inset-x-0 bottom-0 z-10 border-t border-line bg-white/92 px-3 pt-2 backdrop-blur dark:border-white/15 dark:bg-[#1d1d1a]/95">
       <div className="mx-auto grid max-w-lg grid-cols-5 gap-1">
         {items.map(([tab, label, icon]) => (
           <button
@@ -1402,7 +1422,7 @@ function SharePhotoSheet({
   onShare: (target: ShareTarget) => void;
 }) {
   return (
-    <div className="fixed inset-0 z-40 flex items-end bg-black/45 px-3 pb-3 text-ink">
+    <div className="fixed inset-0 z-40 flex items-end bg-black/45 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-ink">
       <section className="mx-auto w-full max-w-md bg-white p-4 shadow-soft dark:bg-[#242420] dark:text-paper">
         <div className="mb-4 flex items-center justify-between">
           <div>

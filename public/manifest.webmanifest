@@ -2,12 +2,14 @@
   "name": "Connection",
   "short_name": "Connection",
   "description": "A private connection app for people, groups, photos, and shared plans.",
-  "start_url": "/",
+  "id": "/",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f8f7f4",
   "theme_color": "#f8f7f4",
   "orientation": "portrait",
+  "categories": ["photo", "social", "productivity"],
   "icons": [
     {
       "src": "/icon.svg",

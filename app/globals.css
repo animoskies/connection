@@ -12,13 +12,19 @@ html.dark {
   background: #151515;
 }
 
+html {
+  min-height: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 * {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  min-height: 100vh;
+  min-height: 100dvh;
   background:
     radial-gradient(circle at 15% 0%, rgba(143, 184, 201, 0.22), transparent 28rem),
     linear-gradient(180deg, #fbfaf7 0%, #f0eee8 100%);
@@ -45,4 +51,24 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+.min-h-screen {
+  min-height: 100dvh;
+}
+
+.app-bottom-nav {
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+}
+
+body.keyboard-open .app-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
 }
