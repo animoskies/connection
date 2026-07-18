@@ -1084,10 +1084,10 @@ export default function Home() {
             </label>
             <button
               aria-label="Account settings"
-              className="grid h-11 w-11 place-items-center rounded-full border border-line bg-white/90 text-ink shadow-sm dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+              className="grid h-11 w-11 place-items-center rounded-full transition hover:-translate-y-0.5"
               onClick={() => setAccountOpen((value) => !value)}
             >
-              <Avatar name={profile.display_name} src={profile.avatar_url ?? ""} size="sm" />
+              <Avatar name={profile.display_name} src={profile.avatar_url ?? ""} size="sm" className="h-11 w-11" />
             </button>
             {accountOpen ? (
               <AccountMenu
