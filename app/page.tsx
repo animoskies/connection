@@ -1451,7 +1451,7 @@ export default function Home() {
         </header>
 
         {message ? (
-          <div className="fixed left-1/2 top-5 z-50 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 rounded-full border border-line bg-white px-4 py-3 text-center text-sm font-medium text-ink shadow-soft dark:border-white/15 dark:bg-[#242420] dark:text-paper">
+          <div className="fixed left-1/2 top-5 z-50 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 rounded-full border border-line bg-white px-4 py-3 text-center text-sm font-medium text-ink shadow-soft dark:border-white/15 dark:bg-[#2b2a25] dark:text-paper">
             {message}
           </div>
         ) : null}
@@ -1639,7 +1639,7 @@ function ConnectionsView({
             Remove
           </button>
         </div>
-        <section className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
+        <section className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#2b2a25]">
           <div className="flex items-center gap-4">
             <Avatar name={selectedConnection.displayName} src={selectedConnection.avatarUrl} size="lg" />
             <div className="min-w-0">
@@ -1742,7 +1742,7 @@ function ConnectionSearchResult({
           : "Connect";
 
   return (
-    <article className="flex items-center gap-3 rounded-lg border border-white/70 bg-white/85 p-3 shadow-sm dark:border-white/15 dark:bg-[#242420]">
+    <article className="flex items-center gap-3 rounded-lg border border-white/70 bg-white/85 p-3 shadow-sm dark:border-white/15 dark:bg-[#2b2a25]">
       <button
         className="flex min-w-0 flex-1 items-center gap-3 text-left"
         disabled={!canOpen}
@@ -1856,11 +1856,11 @@ function ProfileView({
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="rounded-lg border border-white/70 bg-white/85 p-5 text-center shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
+      <div className="rounded-lg border border-white/70 bg-white/85 p-5 text-center shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#2b2a25]">
         <Avatar name={profile.display_name} src={profile.avatar_url ?? ""} size="lg" className="mx-auto" />
         <h1 className="mt-3 text-2xl font-semibold">{profile.display_name}</h1>
         <p className="text-sm text-ink/55 dark:text-paper/55">{profile.username}</p>
-        <div className="mt-4 grid grid-cols-3 divide-x divide-line rounded-lg border border-line bg-paper/70 text-center dark:divide-white/15 dark:border-white/15 dark:bg-[#1d1d1a]">
+        <div className="mt-4 grid grid-cols-3 divide-x divide-line rounded-lg border border-line bg-paper/70 text-center dark:divide-white/15 dark:border-white/15 dark:bg-[#23231f]">
           <button className="px-2 py-3" onClick={() => setShowConnections(false)} type="button">
             <span className="block text-lg font-semibold">{ownPhotos.length}</span>
             <span className="text-xs text-ink/55 dark:text-paper/55">Photos</span>
@@ -1882,7 +1882,7 @@ function ProfileView({
             {connections.map((connection) => (
               <button
                 key={connection.id}
-                className="flex items-center gap-3 rounded-lg border border-white/70 bg-white/85 p-3 text-left shadow-sm dark:border-white/15 dark:bg-[#242420]"
+                className="flex items-center gap-3 rounded-lg border border-white/70 bg-white/85 p-3 text-left shadow-sm dark:border-white/15 dark:bg-[#2b2a25]"
                 onClick={() => onOpenConnection(connection.id)}
                 type="button"
               >
@@ -2020,7 +2020,7 @@ function CalendarView({
       <div className="flex items-center justify-end">
         <div className="flex items-center gap-2">
         <select
-          className="min-w-0 flex-1 rounded-lg border border-white/70 bg-white/90 px-3 py-2 text-sm text-ink shadow-sm outline-none dark:border-white/15 dark:bg-[#242420] dark:text-paper sm:w-44"
+          className="min-w-0 flex-1 rounded-lg border border-white/70 bg-white/90 px-3 py-2 text-sm text-ink shadow-sm outline-none dark:border-white/15 dark:bg-[#2b2a25] dark:text-paper sm:w-44"
           value={calendarGroupId}
           onChange={(event) => setCalendarGroupId(event.target.value)}
         >
@@ -2033,7 +2033,7 @@ function CalendarView({
         </select>
           <button
             aria-label="Add event"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-white/70 bg-white/90 text-ink shadow-sm transition hover:bg-paper disabled:opacity-35 dark:border-white/15 dark:bg-[#242420] dark:text-paper"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-white/70 bg-white/90 text-ink shadow-sm transition hover:bg-paper disabled:opacity-35 dark:border-white/15 dark:bg-[#2b2a25] dark:text-paper"
             disabled={!editableGroups.length}
             onClick={openAddEvent}
             type="button"
@@ -2043,7 +2043,7 @@ function CalendarView({
         </div>
       </div>
 
-      <div className="flex rounded-full border border-line bg-paper p-1 dark:border-white/15 dark:bg-[#1d1d1a]">
+      <div className="flex rounded-full border border-line bg-paper p-1 dark:border-white/15 dark:bg-[#23231f]">
         {(["agenda", "week", "month"] as ViewMode[]).map((mode) => (
           <button
             key={mode}
@@ -2125,14 +2125,14 @@ function BottomNav({
   ];
 
   return (
-    <nav className="app-bottom-nav fixed inset-x-0 bottom-0 z-10 border-t border-line bg-white/92 px-3 pt-2 backdrop-blur dark:border-white/15 dark:bg-[#1d1d1a]/95">
+    <nav className="app-bottom-nav fixed inset-x-0 bottom-0 z-10 border-t border-line bg-white/92 px-3 pt-2 backdrop-blur dark:border-white/15 dark:bg-[#23231f]/95">
       <div className="mx-auto grid max-w-lg grid-cols-5 gap-1">
         {items.map(([tab, label, icon]) => (
           <button
             key={tab}
             className={clsx(
               "flex min-w-0 flex-col items-center gap-1 px-1 py-1.5 text-[0.68rem]",
-              activeTab === tab ? "text-[#1f73ff]" : "text-ink/55 dark:text-paper/55"
+              activeTab === tab ? "text-[#65745a]" : "text-ink/55 dark:text-paper/55"
             )}
             onClick={() => setActiveTab(tab)}
           >
@@ -2341,7 +2341,7 @@ function SharePhotoSheet({
 
   return (
     <div className="fixed inset-0 z-40 flex items-end bg-black/45 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-ink">
-      <section className="mx-auto w-full max-w-md bg-white p-4 shadow-soft dark:bg-[#242420] dark:text-paper">
+      <section className="mx-auto w-full max-w-md bg-white p-4 shadow-soft dark:bg-[#2b2a25] dark:text-paper">
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold">Share to</h2>
@@ -2352,12 +2352,12 @@ function SharePhotoSheet({
           </button>
         </div>
 
-        <div className="mb-4 aspect-square w-full overflow-hidden bg-paper dark:bg-[#1d1d1a]">
+        <div className="mb-4 aspect-square w-full overflow-hidden bg-paper dark:bg-[#23231f]">
           <img alt="Captured preview" className={memoryPhotoClass} src={src} />
         </div>
 
         <textarea
-          className="mb-4 min-h-24 w-full rounded-lg border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+          className="mb-4 min-h-24 w-full rounded-lg border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#23231f] dark:text-paper"
           placeholder="Add a caption"
           value={caption}
           onChange={(event) => setCaption(event.target.value)}
@@ -2368,7 +2368,7 @@ function SharePhotoSheet({
           <button
             className={clsx(
               "flex items-center justify-between border px-3 py-3 text-left transition dark:border-white/15",
-              selectedKey === "connections" ? "border-ink bg-paper dark:border-paper dark:bg-[#1d1d1a]" : "border-line"
+              selectedKey === "connections" ? "border-ink bg-paper dark:border-paper dark:bg-[#23231f]" : "border-line"
             )}
             disabled={photoUploading}
             onClick={() => setSelectedTarget({ type: "connections" })}
@@ -2386,7 +2386,7 @@ function SharePhotoSheet({
               key={group.id}
               className={clsx(
                 "flex items-center justify-between border px-3 py-3 text-left transition dark:border-white/15",
-                selectedKey === `group:${group.id}` ? "border-ink bg-paper dark:border-paper dark:bg-[#1d1d1a]" : "border-line"
+                selectedKey === `group:${group.id}` ? "border-ink bg-paper dark:border-paper dark:bg-[#23231f]" : "border-line"
               )}
               disabled={photoUploading}
               onClick={() => setSelectedTarget({ type: "group", groupId: group.id })}
@@ -2442,7 +2442,7 @@ function NotificationCenter({
   const hasHistory = Boolean(groupNotifications.length);
 
   return (
-    <section className="absolute right-0 top-12 z-20 w-[min(23rem,calc(100vw-2rem))] rounded-lg border border-line bg-white p-4 text-left shadow-soft dark:border-white/15 dark:bg-[#242420]">
+    <section className="absolute right-0 top-12 z-20 w-[min(23rem,calc(100vw-2rem))] rounded-lg border border-line bg-white p-4 text-left shadow-soft dark:border-white/15 dark:bg-[#2b2a25]">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-semibold">Notifications</h2>
         {total ? <span className="text-xs text-ink/55 dark:text-paper/55">{total} pending</span> : null}
@@ -2453,10 +2453,10 @@ function NotificationCenter({
             <button
               key={notification.id}
               className={clsx(
-                "rounded-lg border p-3 text-left transition hover:border-ink/25 hover:bg-white dark:border-white/15 dark:hover:border-paper/25 dark:hover:bg-[#242420]",
+                "rounded-lg border p-3 text-left transition hover:border-ink/25 hover:bg-white dark:border-white/15 dark:hover:border-paper/25 dark:hover:bg-[#2b2a25]",
                 notification.readAt
-                  ? "border-line bg-white dark:bg-[#1d1d1a]"
-                  : "border-moss/40 bg-skysoft/55 dark:bg-[#202923]"
+                  ? "border-line bg-white dark:bg-[#23231f]"
+                  : "border-moss/40 bg-skysoft/55 dark:bg-[#263029]"
               )}
               onClick={() => onOpenGroupNotification(notification)}
               type="button"
@@ -2471,14 +2471,14 @@ function NotificationCenter({
               </div>
               <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">{notification.message}</p>
               {typeof notification.metadata.summary === "string" ? (
-                <p className="mt-2 rounded-md bg-white px-2 py-1.5 text-xs leading-5 text-ink/55 dark:bg-[#242420] dark:text-paper/55">
+                <p className="mt-2 rounded-md bg-white px-2 py-1.5 text-xs leading-5 text-ink/55 dark:bg-[#2b2a25] dark:text-paper/55">
                   {notification.metadata.summary}
                 </p>
               ) : null}
             </button>
           ))}
           {connectionRequests.map((request) => (
-            <article key={request.requesterId} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
+            <article key={request.requesterId} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#23231f]">
               <div className="flex items-center gap-3">
                 <Avatar name={request.displayName} src={request.avatarUrl} size="sm" />
                 <div className="min-w-0">
@@ -2508,7 +2508,7 @@ function NotificationCenter({
             </article>
           ))}
           {invites.map((invite) => (
-            <article key={invite.id} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
+            <article key={invite.id} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#23231f]">
               <div className="flex items-start justify-between gap-2">
                 <p className="text-sm font-semibold">{invite.groupName}</p>
                 <p className="text-[0.68rem] uppercase tracking-[0.14em] text-ink/35 dark:text-paper/35">
@@ -2555,7 +2555,7 @@ function InvitePrompt({
 }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 px-4 text-ink">
-      <section className="w-full max-w-sm rounded-lg bg-white p-5 shadow-soft dark:bg-[#242420] dark:text-paper">
+      <section className="w-full max-w-sm rounded-lg bg-white p-5 shadow-soft dark:bg-[#2b2a25] dark:text-paper">
         <div className="mb-4 grid h-11 w-11 place-items-center rounded-full bg-skysoft text-ink">
           <UserPlus size={19} />
         </div>
@@ -2658,7 +2658,7 @@ function AuthScreen({ message, setMessage }: { message: string; setMessage: (val
       <section className="mx-auto grid min-h-[calc(100vh-3rem)] w-full max-w-6xl items-center gap-8 lg:grid-cols-[minmax(0,1.05fr)_430px]">
         <AuthVisual />
 
-        <div className="w-full rounded-lg border border-white/70 bg-white/95 p-5 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420] sm:p-6">
+        <div className="w-full rounded-lg border border-white/70 bg-white/95 p-5 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#2b2a25] sm:p-6">
           <div className="mb-6">
             <ConnectionLogo className="mb-5" />
             <h1 className="text-3xl font-semibold leading-tight sm:text-4xl">Share moments with the people who matter.</h1>
@@ -2703,7 +2703,7 @@ function AuthVisual() {
       </div>
 
       <div className="relative max-w-xl">
-        <div className="rounded-lg border border-white/70 bg-white/80 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
+        <div className="rounded-lg border border-white/70 bg-white/80 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#2b2a25]">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-ink/45 dark:text-paper/45">Today</p>
@@ -2718,7 +2718,7 @@ function AuthVisual() {
             {Array.from({ length: 6 }, (_, index) => (
               <div
                 key={index}
-                className="aspect-square bg-[radial-gradient(circle_at_35%_35%,#f8f7f4_0,#c7c3ba_32%,#2b2b29_100%)]"
+                className="aspect-square bg-[radial-gradient(circle_at_35%_35%,#f4f1ea_0,#c7c3ba_32%,#2b2b29_100%)]"
               />
             ))}
           </div>
@@ -2770,7 +2770,7 @@ function ProfileSetup({
 
   return (
     <main className="grid min-h-screen place-items-center px-4 py-10 text-ink dark:text-paper">
-      <section className="w-full max-w-md rounded-lg border border-white/70 bg-white/95 p-5 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
+      <section className="w-full max-w-md rounded-lg border border-white/70 bg-white/95 p-5 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#2b2a25]">
         <div className="mb-5 inline-flex h-11 w-11 items-center justify-center rounded-full bg-skysoft text-ink">
           <Clock3 size={19} />
         </div>
@@ -2794,7 +2794,7 @@ function ProfileSetup({
 
 function ProfilePanel({ profile }: { profile: Profile }) {
   return (
-    <section className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
+    <section className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#2b2a25]">
       <div className="flex items-center gap-3">
         <Avatar name={profile.display_name} src={profile.avatar_url ?? ""} />
         <div className="min-w-0">
@@ -2802,7 +2802,7 @@ function ProfilePanel({ profile }: { profile: Profile }) {
           <p className="truncate text-sm text-ink/60 dark:text-paper/60">{profile.username}</p>
         </div>
       </div>
-      <div className="mt-4 flex items-center gap-2 rounded-full border border-line bg-paper px-3 py-2 text-sm dark:border-white/15 dark:bg-[#1d1d1a]">
+      <div className="mt-4 flex items-center gap-2 rounded-full border border-line bg-paper px-3 py-2 text-sm dark:border-white/15 dark:bg-[#23231f]">
         <Clock3 size={16} />
         <span className="truncate">{profile.preferred_timezone}</span>
       </div>
@@ -2914,7 +2914,7 @@ function AccountMenu({
   }
 
   return (
-    <div className="absolute right-0 top-12 z-20 w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-line bg-white p-4 text-left shadow-soft dark:border-white/15 dark:bg-[#242420]">
+    <div className="absolute right-0 top-12 z-20 w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-line bg-white p-4 text-left shadow-soft dark:border-white/15 dark:bg-[#2b2a25]">
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <Avatar name={displayName} src={avatarUrl} />
@@ -3122,7 +3122,7 @@ function GroupPanel({
 
       {addOpen ? (
         <div className="fixed inset-0 z-40 flex items-end bg-black/45 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-ink sm:items-center">
-          <form className="mx-auto w-full max-w-lg rounded-t-2xl border border-white/70 bg-white p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420] dark:text-paper sm:rounded-2xl" onSubmit={createGroup}>
+          <form className="mx-auto w-full max-w-lg rounded-t-2xl border border-white/70 bg-white p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#2b2a25] dark:text-paper sm:rounded-2xl" onSubmit={createGroup}>
             <div className="mb-4 flex items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Plus size={18} />
@@ -3139,7 +3139,7 @@ function GroupPanel({
             </div>
             <div className="grid gap-3">
               <input
-                className="rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+                className="rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#23231f] dark:text-paper"
                 placeholder="Group name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
@@ -3184,12 +3184,12 @@ function GroupPanel({
           const latestPhoto = groupPhotos[0] ?? null;
           const isEditing = editingGroupId === group.id;
           return (
-            <article key={group.id} className="rounded-lg border border-white/70 bg-white/90 p-3 shadow-sm backdrop-blur dark:border-white/15 dark:bg-[#242420]">
+            <article key={group.id} className="rounded-lg border border-white/70 bg-white/90 p-3 shadow-sm backdrop-blur dark:border-white/15 dark:bg-[#2b2a25]">
               {isEditing ? (
                 <form className="flex items-center gap-2" onSubmit={(event) => void renameGroup(event, group)}>
                   <GroupThumb groupId={group.id} photos={photos} />
                   <input
-                    className="min-w-0 flex-1 rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+                    className="min-w-0 flex-1 rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#23231f] dark:text-paper"
                     value={editingName}
                     onChange={(event) => setEditingName(event.target.value)}
                     autoFocus
@@ -3226,7 +3226,7 @@ function GroupPanel({
                   </button>
                   <button
                     aria-label={`Edit ${group.name}`}
-                    className="grid h-10 w-10 place-items-center rounded-full border border-line bg-white/75 text-ink/65 transition hover:bg-paper dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper/65"
+                    className="grid h-10 w-10 place-items-center rounded-full border border-line bg-white/75 text-ink/65 transition hover:bg-paper dark:border-white/15 dark:bg-[#23231f] dark:text-paper/65"
                     onClick={() => {
                       setEditingGroupId(null);
                       setInviteGroupId(null);
@@ -3293,7 +3293,7 @@ function GroupThumb({ groupId, photos }: { groupId: string; photos: PhotoItem[] 
   const image = photos.find((photo) => photo.groupId === groupId)?.src;
 
   return (
-    <span className="block h-16 w-16 overflow-hidden rounded-lg bg-paper dark:bg-[#1d1d1a]">
+    <span className="block h-16 w-16 overflow-hidden rounded-lg bg-paper dark:bg-[#23231f]">
       {image ? <img alt="" className={memoryPhotoClass} src={image} /> : null}
     </span>
   );
@@ -3348,17 +3348,17 @@ function UsernameSearchPicker({
   return (
     <div className="relative">
       <input
-        className="w-full rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+        className="w-full rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#23231f] dark:text-paper"
         placeholder={placeholder}
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
       {results.length ? (
-        <div className="absolute inset-x-0 top-[calc(100%+0.35rem)] z-10 overflow-hidden rounded-lg border border-line bg-white shadow-soft dark:border-white/15 dark:bg-[#1d1d1a]">
+        <div className="absolute inset-x-0 top-[calc(100%+0.35rem)] z-10 overflow-hidden rounded-lg border border-line bg-white shadow-soft dark:border-white/15 dark:bg-[#23231f]">
           {results.map((result) => (
             <button
               key={result.id}
-              className="flex w-full items-center gap-3 px-3 py-2 text-left transition hover:bg-paper dark:hover:bg-[#242420]"
+              className="flex w-full items-center gap-3 px-3 py-2 text-left transition hover:bg-paper dark:hover:bg-[#2b2a25]"
               onClick={() => selectProfile(result)}
               type="button"
             >
@@ -3560,7 +3560,7 @@ function MemberPanel({
   }
 
   return (
-    <section className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
+    <section className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#2b2a25]">
       <div className="mb-3 flex items-center gap-2">
         <Shield size={18} />
         <h2 className="font-semibold">Invite</h2>
@@ -3569,7 +3569,7 @@ function MemberPanel({
         <div className="min-w-0 flex-1">
           {invitee ? (
             <button
-              className="flex w-full items-center justify-between rounded-full border border-line bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-[#1d1d1a]"
+              className="flex w-full items-center justify-between rounded-full border border-line bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-[#23231f]"
               onClick={() => setInvitee(null)}
               type="button"
             >
@@ -3605,7 +3605,7 @@ function MemberPanel({
       {inviteLink ? (
         <div className="mt-3 grid gap-2">
           <input
-            className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-xs text-ink outline-none dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+            className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-xs text-ink outline-none dark:border-white/15 dark:bg-[#23231f] dark:text-paper"
             readOnly
             value={inviteLink}
             onFocus={(event) => event.target.select()}
@@ -3646,7 +3646,7 @@ function CalendarSurface({
         : Array.from({ length: 5 }, (_, index) => today.plus({ days: index }));
 
   return (
-    <section className="rounded-lg border border-white/70 bg-white/85 p-3 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
+    <section className="rounded-lg border border-white/70 bg-white/85 p-3 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#2b2a25]">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-ink/65 dark:text-paper/65">
           <CalendarDays size={16} />
@@ -3654,7 +3654,7 @@ function CalendarSurface({
         </div>
         <button
           aria-label="Return to today"
-          className="grid h-9 w-9 place-items-center rounded-full border border-line bg-paper text-ink dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+          className="grid h-9 w-9 place-items-center rounded-full border border-line bg-paper text-ink dark:border-white/15 dark:bg-[#23231f] dark:text-paper"
           onClick={() => setSelectedDate(today.toISODate() ?? selectedDate)}
         >
           <RefreshCw size={16} />
@@ -3676,7 +3676,7 @@ function CalendarSurface({
                 "aspect-square min-h-[4.75rem] rounded-lg border p-2 text-left transition hover:-translate-y-0.5 sm:min-h-20",
                 isSelected
                   ? "border-ink bg-ink text-paper shadow-sm dark:border-paper dark:bg-paper dark:text-ink"
-                  : "border-line bg-paper/80 text-ink hover:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+                  : "border-line bg-paper/80 text-ink hover:border-moss dark:border-white/15 dark:bg-[#23231f] dark:text-paper"
               )}
               onClick={() => setSelectedDate(day.toISODate() ?? selectedDate)}
             >
@@ -3726,7 +3726,7 @@ function EventList({
         return (
           <article
             key={event.id}
-            className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]"
+            className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#2b2a25]"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -3741,7 +3741,7 @@ function EventList({
                 <div className="flex gap-1">
                   <button
                     aria-label="Download calendar invite"
-                    className="grid h-9 w-9 place-items-center rounded-full border border-line bg-paper dark:border-white/15 dark:bg-[#1d1d1a]"
+                    className="grid h-9 w-9 place-items-center rounded-full border border-line bg-paper dark:border-white/15 dark:bg-[#23231f]"
                     onClick={() => downloadEventIcs(event)}
                     type="button"
                   >
@@ -3751,7 +3751,7 @@ function EventList({
                     <>
                     <button
                       aria-label="Edit event"
-                      className="grid h-9 w-9 place-items-center rounded-full border border-line bg-paper dark:border-white/15 dark:bg-[#1d1d1a]"
+                      className="grid h-9 w-9 place-items-center rounded-full border border-line bg-paper dark:border-white/15 dark:bg-[#23231f]"
                       onClick={() => onEdit(event)}
                       type="button"
                     >
@@ -3759,7 +3759,7 @@ function EventList({
                     </button>
                     <button
                       aria-label="Delete event"
-                      className="grid h-9 w-9 place-items-center rounded-full border border-line bg-paper dark:border-white/15 dark:bg-[#1d1d1a]"
+                      className="grid h-9 w-9 place-items-center rounded-full border border-line bg-paper dark:border-white/15 dark:bg-[#23231f]"
                       onClick={() => onDelete(event)}
                       type="button"
                     >
@@ -3904,7 +3904,7 @@ function EventForm({
   const canEdit = group.role === "owner" || group.role === "editor";
 
   return (
-    <section className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-white/70 bg-white p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420] sm:rounded-2xl">
+    <section className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-white/70 bg-white p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#2b2a25] sm:rounded-2xl">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           {editingEvent ? <Pencil size={18} /> : <Plus size={18} />}
@@ -3918,7 +3918,7 @@ function EventForm({
         <label className="flex flex-col gap-1 text-sm font-medium">
           Group
           <select
-            className="rounded-full border border-line bg-white px-3 py-2 text-sm font-normal text-ink outline-none transition focus:border-moss disabled:opacity-50 dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+            className="rounded-full border border-line bg-white px-3 py-2 text-sm font-normal text-ink outline-none transition focus:border-moss disabled:opacity-50 dark:border-white/15 dark:bg-[#23231f] dark:text-paper"
             value={group.id}
             onChange={(event) => onGroupChange(event.target.value)}
             disabled={!canEdit}
@@ -3935,7 +3935,7 @@ function EventForm({
         <label className="flex flex-col gap-1 text-sm font-medium">
           Description
           <textarea
-            className="min-h-20 rounded-lg border border-line bg-white px-3 py-2 text-sm font-normal text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+            className="min-h-20 rounded-lg border border-line bg-white px-3 py-2 text-sm font-normal text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#23231f] dark:text-paper"
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             disabled={!canEdit}
@@ -3985,7 +3985,7 @@ function Field({
     <label className="flex flex-col gap-1 text-sm font-medium">
       {label}
       <input
-        className="rounded-full border border-line bg-white px-3 py-2 text-sm font-normal text-ink outline-none transition focus:border-moss disabled:opacity-50 dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+        className="rounded-full border border-line bg-white px-3 py-2 text-sm font-normal text-ink outline-none transition focus:border-moss disabled:opacity-50 dark:border-white/15 dark:bg-[#23231f] dark:text-paper"
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -4021,7 +4021,7 @@ function SelectField({
       {label}
       <input
         autoComplete="off"
-        className="rounded-full border border-line bg-white px-3 py-2 text-sm font-normal text-ink outline-none transition focus:border-moss disabled:opacity-50 dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+        className="rounded-full border border-line bg-white px-3 py-2 text-sm font-normal text-ink outline-none transition focus:border-moss disabled:opacity-50 dark:border-white/15 dark:bg-[#23231f] dark:text-paper"
         list={listId}
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -4049,7 +4049,7 @@ function Segmented({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="grid grid-cols-2 rounded-full border border-line bg-paper p-1 dark:border-white/15 dark:bg-[#1d1d1a]">
+    <div className="grid grid-cols-2 rounded-full border border-line bg-paper p-1 dark:border-white/15 dark:bg-[#23231f]">
       {options.map(([optionValue, label]) => (
         <button
           type="button"
@@ -4071,7 +4071,7 @@ function Segmented({
 
 function TimeChip({ label, time, zone }: { label: string; time: string; zone: string }) {
   return (
-    <div className="rounded-lg border border-line/70 bg-paper px-3 py-2 text-sm dark:border-white/10 dark:bg-[#1d1d1a]">
+    <div className="rounded-lg border border-line/70 bg-paper px-3 py-2 text-sm dark:border-white/10 dark:bg-[#23231f]">
       <p className="text-xs uppercase tracking-[0.14em] text-ink/45 dark:text-paper/45">{label}</p>
       <p className="mt-1 font-medium">{time}</p>
       <p className="truncate text-xs text-ink/55 dark:text-paper/55">{zone}</p>
@@ -4081,8 +4081,8 @@ function TimeChip({ label, time, zone }: { label: string; time: string; zone: st
 
 function EmptyPanel({ title, body }: { title: string; body: string }) {
   return (
-    <section className="rounded-lg border border-dashed border-rust/40 bg-white/70 p-6 text-center shadow-sm backdrop-blur dark:border-rust/40 dark:bg-[#242420]">
-      <div className="mx-auto mb-3 grid h-10 w-10 place-items-center rounded-full bg-paper text-rust dark:bg-[#1d1d1a]">
+    <section className="rounded-lg border border-dashed border-rust/40 bg-white/70 p-6 text-center shadow-sm backdrop-blur dark:border-rust/40 dark:bg-[#2b2a25]">
+      <div className="mx-auto mb-3 grid h-10 w-10 place-items-center rounded-full bg-paper text-rust dark:bg-[#23231f]">
         <Check size={18} />
       </div>
       <h3 className="font-semibold">{title}</h3>
@@ -4095,7 +4095,7 @@ function ConfigScreen() {
   return (
     <main className="min-h-screen px-4 py-6 text-ink dark:text-paper sm:px-6 lg:px-8">
       <section className="mx-auto grid max-w-6xl gap-5 lg:grid-cols-[390px_minmax(0,1fr)]">
-        <div className="flex flex-col justify-between rounded-lg border border-line bg-white/95 p-5 shadow-soft dark:border-white/15 dark:bg-[#242420]">
+        <div className="flex flex-col justify-between rounded-lg border border-line bg-white/95 p-5 shadow-soft dark:border-white/15 dark:bg-[#2b2a25]">
           <div>
             <div className="mb-4 grid h-12 w-12 place-items-center rounded-md bg-skysoft text-ink dark:bg-paper dark:text-ink">
               <Camera size={24} />
@@ -4123,7 +4123,7 @@ function ConfigScreen() {
 
 function SetupStep({ label, text }: { label: string; text: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-md bg-paper px-3 py-2 dark:bg-[#1d1d1a]">
+    <div className="flex items-center gap-3 rounded-md bg-paper px-3 py-2 dark:bg-[#23231f]">
       <span className="grid h-7 w-7 place-items-center rounded bg-skysoft text-xs font-semibold text-ink">
         {label.slice(0, 1)}
       </span>
@@ -4137,7 +4137,7 @@ function SetupStep({ label, text }: { label: string; text: string }) {
 
 function BridgePreview() {
   return (
-    <section className="overflow-hidden rounded-lg border border-line bg-[#fffaf0]/95 shadow-soft dark:border-white/15 dark:bg-[#242420]">
+    <section className="overflow-hidden rounded-lg border border-line bg-[#fffaf0]/95 shadow-soft dark:border-white/15 dark:bg-[#2b2a25]">
       <div className="border-b border-line bg-white/80 px-4 py-3 dark:border-white/15 dark:bg-white/5">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -4156,7 +4156,7 @@ function BridgePreview() {
           {Array.from({ length: 9 }, (_, index) => (
             <div
               key={index}
-              className="aspect-square bg-[radial-gradient(circle_at_35%_35%,#f8f7f4_0,#c7c3ba_32%,#2b2b29_100%)] dark:bg-[#1d1d1a]"
+              className="aspect-square bg-[radial-gradient(circle_at_35%_35%,#f4f1ea_0,#c7c3ba_32%,#2b2b29_100%)] dark:bg-[#23231f]"
             />
           ))}
         </div>

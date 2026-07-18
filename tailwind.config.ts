@@ -10,12 +10,12 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        ink: "#151515",
-        paper: "#f8f7f4",
-        line: "#dedbd4",
-        moss: "#6f7f5f",
-        rust: "#b66345",
-        skysoft: "#8fb8c9"
+        ink: "#181715",
+        paper: "#f4f1ea",
+        line: "#d8d3c8",
+        moss: "#65745a",
+        rust: "#ad654c",
+        skysoft: "#dfe7df"
       },
       boxShadow: {
         soft: "0 20px 60px rgba(21, 21, 21, 0.08)"
