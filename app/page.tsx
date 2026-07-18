@@ -283,7 +283,23 @@ export default function Home() {
   }, [darkMode]);
 
   useEffect(() => {
-    if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
+    if (!("serviceWorker" in navigator)) return;
+
+    if (process.env.NODE_ENV !== "production") {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        registrations.forEach((registration) => {
+          registration.unregister().catch(() => undefined);
+        });
+      });
+      caches?.keys?.().then((keys) => {
+        keys.forEach((key) => {
+          caches.delete(key).catch(() => undefined);
+        });
+      });
+      return;
+    }
+
+    if (process.env.NODE_ENV === "production") {
       navigator.serviceWorker.addEventListener("controllerchange", () => {
         const updateKey = "connection-sw-updated";
         if (sessionStorage.getItem(updateKey)) return;
@@ -314,20 +330,46 @@ export default function Home() {
     const inviteToken = new URLSearchParams(window.location.search).get("invite");
     if (!inviteToken) return;
     localStorage.setItem("connection-pending-invite", inviteToken);
-    window.history.replaceState({}, "", window.location.pathname);
+    window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash}`);
   }, []);
 
   useEffect(() => {
     if (!supabase) return;
+    const client = supabase;
 
-    supabase.auth.getSession().then(({ data }) => {
+    async function syncSession() {
+      const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
+
+      if (accessToken && refreshToken) {
+        const { data, error } = await client.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken
+        });
+
+        window.history.replaceState({}, "", window.location.pathname);
+
+        if (error) {
+          setMessage(error.message);
+          setSessionUserId(null);
+        } else {
+          setSessionUserId(data.session?.user.id ?? null);
+        }
+        setLoading(false);
+        return;
+      }
+
+      const { data } = await client.auth.getSession();
       setSessionUserId(data.session?.user.id ?? null);
       setLoading(false);
-    });
+    }
+
+    void syncSession();
 
     const {
       data: { subscription }
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = client.auth.onAuthStateChange((_event, session) => {
       setSessionUserId(session?.user.id ?? null);
     });
 
