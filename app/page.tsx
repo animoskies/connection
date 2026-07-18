@@ -9,9 +9,11 @@ import {
   Check,
   Clock3,
   Copy,
+  Download,
   Image as ImageIcon,
   Info,
   LogOut,
+  MoreHorizontal,
   Moon,
   Plus,
   Pencil,
@@ -173,7 +175,10 @@ type ConnectionRequestRow = {
 };
 
 const supabase = hasSupabaseConfig ? createSupabaseClient() : null;
-const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "");
+const configuredAppUrl =
+  process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
+  "https://connection-amber.vercel.app";
 const memoryPhotoClass = "h-full w-full object-cover";
 const nativePhotoMaxSize = 1280;
 const nativePhotoQuality = 0.72;
@@ -254,6 +259,46 @@ function appUrl(path = "/") {
   const base = configuredAppUrl || (typeof window !== "undefined" ? window.location.origin : "");
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return `${base}${normalizedPath}`;
+}
+
+function icsEscape(value = "") {
+  return value.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
+}
+
+function icsDate(value: string) {
+  return DateTime.fromISO(value, { zone: "utc" }).toFormat("yyyyLLdd'T'HHmmss'Z'");
+}
+
+function downloadEventIcs(event: EventItem) {
+  const start = DateTime.fromISO(event.starts_at_utc, { zone: "utc" });
+  const end = start.plus({ hours: 1 });
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Connection//Group Calendar//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "BEGIN:VEVENT",
+    `UID:${event.id}@connection`,
+    `DTSTAMP:${DateTime.utc().toFormat("yyyyLLdd'T'HHmmss'Z'")}`,
+    `DTSTART:${icsDate(event.starts_at_utc)}`,
+    `DTEND:${end.toFormat("yyyyLLdd'T'HHmmss'Z'")}`,
+    `SUMMARY:${icsEscape(event.title)}`,
+    event.description ? `DESCRIPTION:${icsEscape(event.description)}` : "",
+    event.location ? `LOCATION:${icsEscape(event.location)}` : "",
+    "END:VEVENT",
+    "END:VCALENDAR"
+  ].filter(Boolean).join("\r\n");
+
+  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${event.title.trim().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "event"}.ics`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function localDateTime(event: EventItem, timezone: string) {
@@ -1196,6 +1241,9 @@ export default function Home() {
   }
 
   async function deletePhoto(photo: PhotoItem) {
+    const confirmed = window.confirm("Delete this photo?");
+    if (!confirmed) return;
+
     const headers = await authHeaders();
     if (!headers) return;
 
@@ -1263,7 +1311,7 @@ export default function Home() {
   return (
     <main className="min-h-screen px-4 pb-24 pt-5 text-ink dark:text-paper sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-6xl flex-col gap-5">
-        <header className="flex items-center justify-between gap-3">
+        <header className="sticky top-3 z-20 flex items-center justify-between gap-3 rounded-2xl border border-white/70 bg-white/90 px-3 py-2 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]/90">
           <ConnectionLogo compact />
           <div className="relative flex items-center gap-2">
             <button
@@ -1375,6 +1423,11 @@ export default function Home() {
             activeGroupId={activeGroupId}
             groups={groups}
             notifyGroupMembers={notifyGroupMembers}
+            onOpenGroupCalendar={(groupId) => {
+              setActiveGroupId(null);
+              setCalendarGroupId(groupId);
+              setActiveTab("calendar");
+            }}
             onOpenProfile={openPersonProfile}
             photos={allPhotos}
             profile={profile}
@@ -1670,6 +1723,7 @@ function GroupsView({
   activeGroupId,
   groups,
   notifyGroupMembers,
+  onOpenGroupCalendar,
   onOpenProfile,
   openPhoto,
   photos,
@@ -1682,6 +1736,7 @@ function GroupsView({
   activeGroupId: string | null;
   groups: Group[];
   notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
+  onOpenGroupCalendar: (groupId: string) => void;
   onOpenProfile: (profileId: string, displayName?: string) => void;
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
@@ -1711,6 +1766,7 @@ function GroupsView({
         <GroupGallery
           group={activeGroup}
           notifyGroupMembers={notifyGroupMembers}
+          onOpenGroupCalendar={onOpenGroupCalendar}
           onOpenProfile={onOpenProfile}
           openPhoto={openPhoto}
           photos={selectedGroupPhotos}
@@ -1876,6 +1932,9 @@ function CalendarView({
 
   async function deleteEvent(event: EventItem) {
     if (!supabase) return;
+    const confirmed = window.confirm(`Delete ${event.title}?`);
+    if (!confirmed) return;
+
     setMessage("");
     const { error } = await supabase.from("events").delete().eq("id", event.id);
     if (error) {
@@ -1904,21 +1963,11 @@ function CalendarView({
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+        <h1 className="text-2xl font-semibold">Calendar</h1>
         <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-semibold">Calendar</h1>
-          <button
-            aria-label="Add event"
-            className="grid h-8 w-8 place-items-center text-ink/75 transition hover:text-ink disabled:opacity-35 dark:text-paper/75 dark:hover:text-paper"
-            disabled={!editableGroups.length}
-            onClick={openAddEvent}
-            type="button"
-          >
-            <Plus size={18} />
-          </button>
-        </div>
         <select
-          className="max-w-[11rem] rounded-full border border-line bg-white px-3 py-2 text-sm text-ink outline-none dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+          className="min-w-0 flex-1 rounded-lg border border-white/70 bg-white/90 px-3 py-2 text-sm text-ink shadow-sm outline-none dark:border-white/15 dark:bg-[#242420] dark:text-paper sm:w-44"
           value={calendarGroupId}
           onChange={(event) => setCalendarGroupId(event.target.value)}
         >
@@ -1929,6 +1978,16 @@ function CalendarView({
             </option>
           ))}
         </select>
+          <button
+            aria-label="Add event"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-white/70 bg-white/90 text-ink shadow-sm transition hover:bg-paper disabled:opacity-35 dark:border-white/15 dark:bg-[#242420] dark:text-paper"
+            disabled={!editableGroups.length}
+            onClick={openAddEvent}
+            type="button"
+          >
+            <Plus size={18} />
+          </button>
+        </div>
       </div>
 
       <div className="flex rounded-full border border-line bg-paper p-1 dark:border-white/15 dark:bg-[#1d1d1a]">
@@ -2287,11 +2346,16 @@ function NotificationCenter({
         {total ? <span className="text-xs text-ink/55 dark:text-paper/55">{total} pending</span> : null}
       </div>
       {total || hasHistory ? (
-        <div className="grid gap-3">
+        <div className="grid max-h-[min(32rem,calc(100dvh-9rem))] gap-3 overflow-y-auto pr-1">
           {groupNotifications.map((notification) => (
             <button
               key={notification.id}
-              className="rounded-lg border border-line bg-paper p-3 text-left transition hover:border-ink/25 hover:bg-white dark:border-white/15 dark:bg-[#1d1d1a] dark:hover:border-paper/25 dark:hover:bg-[#242420]"
+              className={clsx(
+                "rounded-lg border p-3 text-left transition hover:border-ink/25 hover:bg-white dark:border-white/15 dark:hover:border-paper/25 dark:hover:bg-[#242420]",
+                notification.readAt
+                  ? "border-line bg-white dark:bg-[#1d1d1a]"
+                  : "border-moss/40 bg-skysoft/55 dark:bg-[#202923]"
+              )}
               onClick={() => onOpenGroupNotification(notification)}
               type="button"
             >
@@ -2302,7 +2366,6 @@ function NotificationCenter({
                     {notificationTime(notification.createdAt)}
                   </p>
                 </div>
-                {notification.readAt ? <span className="text-[0.68rem] uppercase tracking-[0.16em] text-ink/35 dark:text-paper/35">Read</span> : null}
               </div>
               <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">{notification.message}</p>
               {typeof notification.metadata.summary === "string" ? (
@@ -2836,6 +2899,7 @@ function GroupPanel({
   const [name, setName] = useState("");
   const [selectedMembers, setSelectedMembers] = useState<ConnectionProfile[]>([]);
   const [addOpen, setAddOpen] = useState(false);
+  const [actionGroupId, setActionGroupId] = useState<string | null>(null);
   const [inviteGroupId, setInviteGroupId] = useState<string | null>(null);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -2888,6 +2952,7 @@ function GroupPanel({
   }
 
   function startRename(group: Group) {
+    setActionGroupId(null);
     setInviteGroupId(null);
     setEditingGroupId(group.id);
     setEditingName(group.name);
@@ -2950,6 +3015,7 @@ function GroupPanel({
             className="grid h-8 w-8 place-items-center text-ink/75 transition hover:text-ink dark:text-paper/75 dark:hover:text-paper"
             onClick={() => {
               setInviteGroupId(null);
+              setActionGroupId(null);
               setEditingGroupId(null);
               setAddOpen((value) => !value);
             }}
@@ -3065,42 +3131,52 @@ function GroupPanel({
                       </span>
                     </span>
                   </button>
-                  <div className="flex items-center gap-1">
-                    {group.role === "owner" ? (
-                      <button
-                        aria-label={`Rename ${group.name}`}
-                        className="grid h-10 w-10 place-items-center rounded-full text-ink/60 transition hover:bg-paper dark:text-paper/60 dark:hover:bg-[#1d1d1a]"
-                        onClick={() => startRename(group)}
-                        type="button"
-                      >
-                        <Pencil size={17} />
-                      </button>
-                    ) : null}
-                    <button
-                      aria-label={`Delete ${group.name}`}
-                      className={clsx(
-                        "grid h-10 w-10 place-items-center rounded-full transition hover:bg-paper dark:hover:bg-[#1d1d1a]",
-                        group.role === "owner" ? "text-ink/60 dark:text-paper/60" : "text-ink/35 dark:text-paper/35"
-                      )}
-                      onClick={() => void deleteGroup(group)}
-                      type="button"
-                    >
-                      <Trash2 size={17} />
-                    </button>
-              <button
-                aria-label={`Invite to ${group.name}`}
-                    className="grid h-10 w-10 place-items-center rounded-full border border-line bg-white/75 dark:border-white/15 dark:bg-[#1d1d1a]"
-                      onClick={() => {
-                        setEditingGroupId(null);
-                        setInviteGroupId((current) => (current === group.id ? null : group.id));
-                      }}
-                type="button"
-              >
-                <UserPlus size={18} />
-              </button>
-                  </div>
+                  <button
+                    aria-label={`Edit ${group.name}`}
+                    className="grid h-10 w-10 place-items-center rounded-full border border-line bg-white/75 text-ink/65 transition hover:bg-paper dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper/65"
+                    onClick={() => {
+                      setEditingGroupId(null);
+                      setInviteGroupId(null);
+                      setActionGroupId((current) => (current === group.id ? null : group.id));
+                    }}
+                    type="button"
+                  >
+                    <Pencil size={17} />
+                  </button>
                 </div>
               )}
+              {actionGroupId === group.id ? (
+                <div className="mt-3 grid grid-cols-3 gap-2 border-t border-line pt-3 dark:border-white/15">
+                  <button
+                    className="flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-sm disabled:opacity-40 dark:border-white/15"
+                    disabled={group.role !== "owner"}
+                    onClick={() => startRename(group)}
+                    type="button"
+                  >
+                    <Pencil size={15} />
+                    Rename
+                  </button>
+                  <button
+                    className="flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-sm dark:border-white/15"
+                    onClick={() => void deleteGroup(group)}
+                    type="button"
+                  >
+                    <Trash2 size={15} />
+                    Delete
+                  </button>
+                  <button
+                    className="flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-sm dark:border-white/15"
+                    onClick={() => {
+                      setActionGroupId(null);
+                      setInviteGroupId((current) => (current === group.id ? null : group.id));
+                    }}
+                    type="button"
+                  >
+                    <UserPlus size={15} />
+                    Invite
+                  </button>
+                </div>
+              ) : null}
               {inviteGroupId === group.id ? (
                 <div className="mt-3">
                   <MemberPanel
@@ -3209,6 +3285,7 @@ function UsernameSearchPicker({
 function GroupGallery({
   group,
   notifyGroupMembers,
+  onOpenGroupCalendar,
   onOpenProfile,
   openPhoto,
   photos,
@@ -3219,6 +3296,7 @@ function GroupGallery({
 }: {
   group: Group;
   notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
+  onOpenGroupCalendar: (groupId: string) => void;
   onOpenProfile: (profileId: string, displayName?: string) => void;
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
@@ -3232,7 +3310,7 @@ function GroupGallery({
 
   return (
     <section className="flex flex-col gap-7">
-      <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-start">
+      <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_5.5rem] items-start">
         <button aria-label="Back to groups" className="grid h-10 w-10 place-items-center" onClick={() => setActiveGroupId(null)}>
           <ArrowLeft size={23} />
         </button>
@@ -3242,14 +3320,24 @@ function GroupGallery({
             {group.member_count} {group.member_count === 1 ? "member" : "members"}
           </p>
         </div>
-        <button
-          aria-label={`Invite to ${group.name}`}
-          className="grid h-10 w-10 place-items-center"
-          onClick={() => setInviteOpen((value) => !value)}
-          type="button"
-        >
-          <UserPlus size={20} />
-        </button>
+        <div className="flex justify-end gap-1">
+          <button
+            aria-label={`${group.name} calendar`}
+            className="grid h-10 w-10 place-items-center"
+            onClick={() => onOpenGroupCalendar(group.id)}
+            type="button"
+          >
+            <CalendarDays size={20} />
+          </button>
+          <button
+            aria-label={`Invite to ${group.name}`}
+            className="grid h-10 w-10 place-items-center"
+            onClick={() => setInviteOpen((value) => !value)}
+            type="button"
+          >
+            <UserPlus size={20} />
+          </button>
+        </div>
       </div>
 
       {inviteOpen ? (
@@ -3557,8 +3645,17 @@ function EventList({
                   <div>{local.toFormat("h:mm a")}</div>
                   <div className="text-xs opacity-80">{local.toFormat("LLL d")}</div>
                 </div>
-                {canEdit ? (
-                  <div className="flex gap-1">
+                <div className="flex gap-1">
+                  <button
+                    aria-label="Download calendar invite"
+                    className="grid h-9 w-9 place-items-center rounded-full border border-line bg-paper dark:border-white/15 dark:bg-[#1d1d1a]"
+                    onClick={() => downloadEventIcs(event)}
+                    type="button"
+                  >
+                    <Download size={15} />
+                  </button>
+                  {canEdit ? (
+                    <>
                     <button
                       aria-label="Edit event"
                       className="grid h-9 w-9 place-items-center rounded-full border border-line bg-paper dark:border-white/15 dark:bg-[#1d1d1a]"
@@ -3575,8 +3672,9 @@ function EventList({
                     >
                       <Trash2 size={15} />
                     </button>
-                  </div>
-                ) : null}
+                    </>
+                  ) : null}
+                </div>
               </div>
             </div>
             {event.description ? (
