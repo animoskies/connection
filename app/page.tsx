@@ -3712,6 +3712,8 @@ function EventList({
   onEdit: (event: EventItem) => void;
   timezone: string;
 }) {
+  const [actionEventId, setActionEventId] = useState<string | null>(null);
+
   if (!events.length) {
     return <EmptyPanel title="No events" body={emptyBody} />;
   }
@@ -3729,47 +3731,55 @@ function EventList({
             className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]"
           >
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
+              <button className="min-w-0 flex-1 text-left" onClick={() => (canEdit ? onEdit(event) : setActionEventId(event.id))} type="button">
                 <h3 className="truncate text-lg font-semibold">{event.title}</h3>
                 {event.location ? <p className="text-sm text-ink/60 dark:text-paper/60">{event.location}</p> : null}
-              </div>
-              <div className="flex items-start gap-2">
+              </button>
+              <div className="flex shrink-0 items-start gap-2">
                 <div className="rounded-lg bg-moss px-3 py-2 text-right text-sm font-medium text-white">
                   <div>{local.toFormat("h:mm a")}</div>
                   <div className="text-xs opacity-80">{local.toFormat("LLL d")}</div>
                 </div>
-                <div className="flex gap-1">
-                  <button
-                    aria-label="Download calendar invite"
-                    className="grid h-9 w-9 place-items-center rounded-full border border-line bg-paper dark:border-white/15 dark:bg-[#1d1d1a]"
-                    onClick={() => downloadEventIcs(event)}
-                    type="button"
-                  >
-                    <Download size={15} />
-                  </button>
-                  {canEdit ? (
-                    <>
-                    <button
-                      aria-label="Edit event"
-                      className="grid h-9 w-9 place-items-center rounded-full border border-line bg-paper dark:border-white/15 dark:bg-[#1d1d1a]"
-                      onClick={() => onEdit(event)}
-                      type="button"
-                    >
-                      <Pencil size={15} />
-                    </button>
-                    <button
-                      aria-label="Delete event"
-                      className="grid h-9 w-9 place-items-center rounded-full border border-line bg-paper dark:border-white/15 dark:bg-[#1d1d1a]"
-                      onClick={() => onDelete(event)}
-                      type="button"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                    </>
-                  ) : null}
-                </div>
+                <button
+                  aria-label={`${event.title} options`}
+                  className="grid h-9 w-9 place-items-center rounded-full border border-line bg-paper dark:border-white/15 dark:bg-[#1d1d1a]"
+                  onClick={() => setActionEventId((current) => (current === event.id ? null : event.id))}
+                  type="button"
+                >
+                  <MoreHorizontal size={17} />
+                </button>
               </div>
             </div>
+            {actionEventId === event.id ? (
+              <div className="mt-3 grid grid-cols-3 gap-2 border-t border-line pt-3 dark:border-white/15">
+                <button
+                  className="flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-sm dark:border-white/15"
+                  onClick={() => downloadEventIcs(event)}
+                  type="button"
+                >
+                  <Download size={15} />
+                  ICS
+                </button>
+                <button
+                  className="flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-sm disabled:opacity-40 dark:border-white/15"
+                  disabled={!canEdit}
+                  onClick={() => onEdit(event)}
+                  type="button"
+                >
+                  <Pencil size={15} />
+                  Edit
+                </button>
+                <button
+                  className="flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-sm disabled:opacity-40 dark:border-white/15"
+                  disabled={!canEdit}
+                  onClick={() => onDelete(event)}
+                  type="button"
+                >
+                  <Trash2 size={15} />
+                  Delete
+                </button>
+              </div>
+            ) : null}
             {event.description ? (
               <p className="mt-3 text-sm leading-6 text-ink/70 dark:text-paper/70">{event.description}</p>
             ) : null}
