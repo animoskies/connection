@@ -264,6 +264,15 @@ function sourceDateTime(event: EventItem) {
   return DateTime.fromISO(event.starts_at_utc, { zone: "utc" }).setZone(event.source_timezone);
 }
 
+function notificationTime(value: string) {
+  const date = DateTime.fromISO(value);
+  if (!date.isValid) return "Recently";
+  const now = DateTime.now();
+  if (now.diff(date, "minutes").minutes < 1) return "Just now";
+  if (now.diff(date, "days").days < 1) return date.toRelative({ base: now }) ?? date.toFormat("h:mm a");
+  return date.toFormat("LLL d, h:mm a");
+}
+
 function photoDate(photo: PhotoItem) {
   return DateTime.fromISO(photo.takenAt || photo.createdAt);
 }
@@ -486,6 +495,29 @@ export default function Home() {
     if (!notificationsOpen) return;
     setNotificationsOpen(false);
   }, [activeGroupId, activeTab, pendingCaptureSrc, selectedConnectionId, selectedPhotoId]);
+
+  useEffect(() => {
+    if (!sessionUserId || !profile) return;
+
+    const loadLightweightNotifications = () => {
+      void loadGroupNotifications();
+      void loadGroupInvites(sessionUserId);
+      void loadConnectionRequests();
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") loadLightweightNotifications();
+    };
+
+    const interval = window.setInterval(loadLightweightNotifications, 10000);
+    window.addEventListener("focus", loadLightweightNotifications);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", loadLightweightNotifications);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [sessionUserId, profile?.id]);
 
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -1248,6 +1280,11 @@ export default function Home() {
               className="relative grid h-11 w-11 place-items-center rounded-full border border-line bg-white/90 text-ink shadow-sm dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
               onClick={() => {
                 setAccountOpen(false);
+                if (!notificationsOpen) {
+                  void loadGroupNotifications();
+                  void loadGroupInvites(sessionUserId);
+                  void loadConnectionRequests();
+                }
                 setNotificationsOpen((value) => !value);
               }}
               type="button"
@@ -2259,7 +2296,12 @@ function NotificationCenter({
               type="button"
             >
               <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-semibold">{notification.groupName}</p>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">{notification.groupName}</p>
+                  <p className="mt-0.5 text-[0.68rem] uppercase tracking-[0.14em] text-ink/35 dark:text-paper/35">
+                    {notificationTime(notification.createdAt)}
+                  </p>
+                </div>
                 {notification.readAt ? <span className="text-[0.68rem] uppercase tracking-[0.16em] text-ink/35 dark:text-paper/35">Read</span> : null}
               </div>
               <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">{notification.message}</p>
@@ -2277,6 +2319,9 @@ function NotificationCenter({
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold">{request.displayName}</p>
                   <p className="truncate text-xs text-ink/60 dark:text-paper/60">@{request.username} wants to connect.</p>
+                  <p className="mt-1 text-[0.68rem] uppercase tracking-[0.14em] text-ink/35 dark:text-paper/35">
+                    {notificationTime(request.createdAt)}
+                  </p>
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
@@ -2299,7 +2344,12 @@ function NotificationCenter({
           ))}
           {invites.map((invite) => (
             <article key={invite.id} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
-              <p className="text-sm font-semibold">{invite.groupName}</p>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-semibold">{invite.groupName}</p>
+                <p className="text-[0.68rem] uppercase tracking-[0.14em] text-ink/35 dark:text-paper/35">
+                  {notificationTime(invite.createdAt)}
+                </p>
+              </div>
               <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">
                 {invite.inviterName} invited you as {invite.role}.
               </p>
