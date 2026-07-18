@@ -23,7 +23,8 @@ import {
   Trash2,
   User,
   UserPlus,
-  Users
+  Users,
+  X
 } from "lucide-react";
 import { DateTime } from "luxon";
 import { clsx } from "clsx";
@@ -169,6 +170,7 @@ function isTransientMessage(message: string) {
     "Connection request accepted.",
     "Connection request declined.",
     "Connection removed.",
+    "Group name updated.",
     "Calendar event added.",
     "Calendar event updated.",
     "Calendar event deleted.",
@@ -2427,6 +2429,8 @@ function GroupPanel({
 }) {
   const [name, setName] = useState("");
   const [inviteGroupId, setInviteGroupId] = useState<string | null>(null);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
 
   async function createGroup(event: FormEvent) {
     event.preventDefault();
@@ -2452,22 +2456,73 @@ function GroupPanel({
     reload();
   }
 
+  function startRename(group: Group) {
+    setInviteGroupId(null);
+    setEditingGroupId(group.id);
+    setEditingName(group.name);
+  }
+
+  async function renameGroup(event: FormEvent, group: Group) {
+    event.preventDefault();
+    if (!supabase || !editingName.trim()) return;
+    setMessage("");
+
+    const { error } = await supabase
+      .from("groups")
+      .update({ name: editingName.trim() })
+      .eq("id", group.id);
+
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setEditingGroupId(null);
+    setEditingName("");
+    await reload();
+    setMessage("Group name updated.");
+  }
+
   return (
     <section>
-      <div className="mb-8 flex items-center justify-between">
+      <div className="mb-6 flex items-end justify-between gap-3">
+        <div>
         <h1 className="text-2xl font-semibold">Groups</h1>
-        <button aria-label="Create group" className="grid h-10 w-10 place-items-center text-ink dark:text-paper" form="new-group-form">
-          <Plus size={22} />
-        </button>
+          <p className="mt-1 text-sm text-ink/50 dark:text-paper/50">Private spaces for photos and shared plans.</p>
+        </div>
       </div>
-      <div className="flex flex-col gap-7">
+      <div className="grid gap-3">
         {groups.map((group) => {
           const groupPhotos = photos.filter((photo) => photo.groupId === group.id);
           const latestPhoto = groupPhotos[0] ?? null;
+          const isEditing = editingGroupId === group.id;
           return (
-            <div key={group.id} className="grid grid-cols-[4rem_minmax(0,1fr)_2.5rem] items-center gap-4">
+            <article key={group.id} className="rounded-lg border border-white/70 bg-white/80 p-3 shadow-sm dark:border-white/15 dark:bg-[#242420]">
+              {isEditing ? (
+                <form className="flex items-center gap-2" onSubmit={(event) => void renameGroup(event, group)}>
+                  <GroupThumb groupId={group.id} photos={photos} />
+                  <input
+                    className="min-w-0 flex-1 rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+                    value={editingName}
+                    onChange={(event) => setEditingName(event.target.value)}
+                    autoFocus
+                  />
+                  <button aria-label="Save group name" className="grid h-10 w-10 place-items-center rounded-full bg-ink text-paper dark:bg-paper dark:text-ink">
+                    <Check size={17} />
+                  </button>
+                  <button
+                    aria-label="Cancel rename"
+                    className="grid h-10 w-10 place-items-center rounded-full border border-line dark:border-white/15"
+                    onClick={() => setEditingGroupId(null)}
+                    type="button"
+                  >
+                    <X size={17} />
+                  </button>
+                </form>
+              ) : (
+                <div className="grid grid-cols-[3.75rem_minmax(0,1fr)_auto] items-center gap-3">
               <button
-                className="contents text-left"
+                    className="contents text-left"
                 onClick={() => setActiveGroupId(group.id)}
                 type="button"
               >
@@ -2482,31 +2537,48 @@ function GroupPanel({
                   </span>
                 </span>
               </button>
+                  <div className="flex items-center gap-1">
+                    {group.role === "owner" ? (
+                      <button
+                        aria-label={`Rename ${group.name}`}
+                        className="grid h-10 w-10 place-items-center rounded-full text-ink/60 transition hover:bg-paper dark:text-paper/60 dark:hover:bg-[#1d1d1a]"
+                        onClick={() => startRename(group)}
+                        type="button"
+                      >
+                        <Pencil size={17} />
+                      </button>
+                    ) : null}
               <button
                 aria-label={`Invite to ${group.name}`}
-                className="grid h-10 w-10 place-items-center rounded-full border border-line bg-white/75 dark:border-white/15 dark:bg-[#1d1d1a]"
-                onClick={() => setInviteGroupId((current) => (current === group.id ? null : group.id))}
+                      className="grid h-10 w-10 place-items-center rounded-full border border-line bg-white/75 dark:border-white/15 dark:bg-[#1d1d1a]"
+                      onClick={() => {
+                        setEditingGroupId(null);
+                        setInviteGroupId((current) => (current === group.id ? null : group.id));
+                      }}
                 type="button"
               >
                 <UserPlus size={18} />
               </button>
+                  </div>
+                </div>
+              )}
               {inviteGroupId === group.id ? (
-                <div className="col-span-3">
+                <div className="mt-3">
                   <MemberPanel group={group} reload={reload} setMessage={setMessage} />
                 </div>
               ) : null}
-            </div>
+            </article>
           );
         })}
       </div>
-      <form id="new-group-form" className="mt-8 flex gap-2" onSubmit={createGroup}>
+      <form id="new-group-form" className="mt-5 flex gap-2 rounded-lg border border-white/70 bg-white/70 p-2 shadow-sm dark:border-white/15 dark:bg-[#242420]" onSubmit={createGroup}>
         <input
-          className="min-w-0 flex-1 rounded-full border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+          className="min-w-0 flex-1 rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
           placeholder="New group"
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
-        <button aria-label="Create group" className="grid h-10 w-10 place-items-center rounded-full bg-rust text-ink">
+        <button aria-label="Create group" className="grid h-10 w-10 place-items-center rounded-full bg-ink text-paper dark:bg-paper dark:text-ink">
           <Plus size={18} />
         </button>
       </form>
