@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Bell,
@@ -213,9 +213,9 @@ function isTransientMessage(message: string) {
     "Invite link copied.",
     "Invite declined."
   ].includes(message) ||
-    message.startsWith("Invite sent to @") ||
+    message.startsWith("Invite sent to ") ||
     message.startsWith("Joined ") ||
-    message.startsWith("Only admin @") ||
+    message.startsWith("Only admin ") ||
     message.startsWith("Connect with ");
 }
 
@@ -503,6 +503,7 @@ export default function Home() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [pendingInvite, setPendingInvite] = useState<InvitePreview | null>(null);
+  const notificationAreaRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", darkMode);
@@ -540,6 +541,19 @@ export default function Home() {
     if (!notificationsOpen) return;
     setNotificationsOpen(false);
   }, [activeGroupId, activeTab, pendingCaptureSrc, selectedConnectionId, selectedPhotoId]);
+
+  useEffect(() => {
+    if (!notificationsOpen) return;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && notificationAreaRef.current?.contains(target)) return;
+      setNotificationsOpen(false);
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [notificationsOpen]);
 
   useEffect(() => {
     if (!sessionUserId || !profile) return;
@@ -1330,7 +1344,7 @@ export default function Home() {
             />
           </label>
           <ConnectionLogo compact className="justify-self-center" />
-          <div className="relative flex items-center justify-end gap-2">
+          <div ref={notificationAreaRef} className="relative flex items-center justify-end gap-2">
             <button
               aria-label="Refresh latest data"
               className="grid h-11 w-11 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
@@ -1588,7 +1602,7 @@ function ConnectionsView({
             <Avatar name={selectedConnection.displayName} src={selectedConnection.avatarUrl} size="lg" />
             <div className="min-w-0">
               <h1 className="truncate text-2xl font-semibold">{selectedConnection.displayName}</h1>
-              <p className="text-sm text-ink/55 dark:text-paper/55">@{selectedConnection.username}</p>
+              <p className="text-sm text-ink/55 dark:text-paper/55">{selectedConnection.username}</p>
               <p className="mt-2 text-xs text-ink/45 dark:text-paper/45">{selectedConnection.preferredTimezone}</p>
             </div>
           </div>
@@ -1648,13 +1662,13 @@ function ConnectionsView({
               <button className="mb-3 flex items-center gap-3 text-left" onClick={() => onOpenProfile(owner)} type="button">
                 <Avatar name={ownerName} src={ownerPhotos[0]?.ownerAvatar} />
                 <div>
-                  <h2 className="font-semibold">@{ownerName}</h2>
+                  <h2 className="font-semibold">{ownerName}</h2>
                   <p className="text-xs text-ink/55 dark:text-paper/55">
                     {photoTime(ownerPhotos[0])} • {ownerPhotos.length} photos
                   </p>
                 </div>
               </button>
-              <PhotoStrip openPhoto={openPhoto} photos={ownerPhotos} sourcePhotos={ownerPhotos} />
+              <PhotoStrip openPhoto={openPhoto} photos={ownerPhotos} sourcePhotos={photos} />
             </section>
             );
           })}
@@ -1696,7 +1710,7 @@ function ConnectionSearchResult({
         <Avatar name={profile.displayName} src={profile.avatarUrl} />
         <div className="min-w-0">
           <p className="truncate font-semibold">{profile.displayName}</p>
-          <p className="truncate text-sm text-ink/55 dark:text-paper/55">@{profile.username}</p>
+          <p className="truncate text-sm text-ink/55 dark:text-paper/55">{profile.username}</p>
         </div>
       </button>
       <button
@@ -1803,7 +1817,7 @@ function ProfileView({
       <div className="rounded-lg border border-white/70 bg-white/85 p-5 text-center shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
         <Avatar name={profile.display_name} src={profile.avatar_url ?? ""} size="lg" className="mx-auto" />
         <h1 className="mt-3 text-2xl font-semibold">{profile.display_name}</h1>
-        <p className="text-sm text-ink/55 dark:text-paper/55">@{profile.username}</p>
+        <p className="text-sm text-ink/55 dark:text-paper/55">{profile.username}</p>
         <div className="mt-4 grid grid-cols-3 divide-x divide-line rounded-lg border border-line bg-paper/70 text-center dark:divide-white/15 dark:border-white/15 dark:bg-[#1d1d1a]">
           <button className="px-2 py-3" onClick={() => setShowConnections(false)} type="button">
             <span className="block text-lg font-semibold">{ownPhotos.length}</span>
@@ -1833,7 +1847,7 @@ function ProfileView({
                 <Avatar name={connection.displayName} src={connection.avatarUrl} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold">{connection.displayName}</p>
-                  <p className="truncate text-sm text-ink/55 dark:text-paper/55">@{connection.username}</p>
+                  <p className="truncate text-sm text-ink/55 dark:text-paper/55">{connection.username}</p>
                 </div>
               </button>
             ))}
@@ -2218,7 +2232,7 @@ function PhotoViewer({
           >
             <Avatar name={photo.owner} src={photo.ownerAvatar} />
             <div>
-              <p className="font-semibold">@{photo.owner}</p>
+              <p className="font-semibold">{photo.owner}</p>
               <p className="text-sm text-ink/60">{photo.location}</p>
             </div>
           </button>
@@ -2399,7 +2413,7 @@ function NotificationCenter({
                 <Avatar name={request.displayName} src={request.avatarUrl} size="sm" />
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold">{request.displayName}</p>
-                  <p className="truncate text-xs text-ink/60 dark:text-paper/60">@{request.username} wants to connect.</p>
+                  <p className="truncate text-xs text-ink/60 dark:text-paper/60">{request.username} wants to connect.</p>
                   <p className="mt-1 text-[0.68rem] uppercase tracking-[0.14em] text-ink/35 dark:text-paper/35">
                     {notificationTime(request.createdAt)}
                   </p>
@@ -2715,7 +2729,7 @@ function ProfilePanel({ profile }: { profile: Profile }) {
         <Avatar name={profile.display_name} src={profile.avatar_url ?? ""} />
         <div className="min-w-0">
           <h2 className="truncate font-semibold">{profile.display_name}</h2>
-          <p className="truncate text-sm text-ink/60 dark:text-paper/60">@{profile.username}</p>
+          <p className="truncate text-sm text-ink/60 dark:text-paper/60">{profile.username}</p>
         </div>
       </div>
       <div className="mt-4 flex items-center gap-2 rounded-full border border-line bg-paper px-3 py-2 text-sm dark:border-white/15 dark:bg-[#1d1d1a]">
@@ -2837,7 +2851,7 @@ function AccountMenu({
           <div className="min-w-0">
           <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-rust">Settings</p>
           <p className="text-sm font-semibold">{profile.display_name}</p>
-          <p className="text-xs text-ink/55 dark:text-paper/55">@{profile.username}</p>
+          <p className="text-xs text-ink/55 dark:text-paper/55">{profile.username}</p>
           </div>
         </div>
         <button
@@ -2996,7 +3010,7 @@ function GroupPanel({
   async function deleteGroup(group: Group) {
     if (!supabase) return;
     if (group.role !== "owner") {
-      setMessage(`Only admin @${group.owner_username} can delete this group.`);
+      setMessage(`Only admin ${group.owner_username} can delete this group.`);
       return;
     }
 
@@ -3076,7 +3090,7 @@ function GroupPanel({
                       onClick={() => setSelectedMembers((current) => current.filter((item) => item.id !== member.id))}
                       type="button"
                     >
-                      @{member.username} <X className="inline" size={13} />
+                      {member.username} <X className="inline" size={13} />
                     </button>
                   ))}
                 </div>
@@ -3133,7 +3147,7 @@ function GroupPanel({
                     <span className="min-w-0">
                       <span className="block truncate text-lg font-semibold">{group.name}</span>
                       <span className="block truncate text-sm text-ink/55 dark:text-paper/55">
-                        {latestPhoto ? `@${latestPhoto.owner} • ${photoTime(latestPhoto)}` : "No photos yet"}
+                        {latestPhoto ? `${latestPhoto.owner} • ${photoTime(latestPhoto)}` : "No photos yet"}
                       </span>
                       <span className="block text-sm text-ink/55 dark:text-paper/55">
                         {group.member_count} {group.member_count === 1 ? "member" : "members"}
@@ -3281,7 +3295,7 @@ function UsernameSearchPicker({
               <Avatar name={result.displayName} src={result.avatarUrl} size="sm" />
               <span className="min-w-0">
                 <span className="block truncate text-sm font-medium">{result.displayName}</span>
-                <span className="block truncate text-xs text-ink/55 dark:text-paper/55">@{result.username}</span>
+                <span className="block truncate text-xs text-ink/55 dark:text-paper/55">{result.username}</span>
               </span>
             </button>
           ))}
@@ -3372,7 +3386,7 @@ function GroupGallery({
               >
                 <Avatar name={ownerName} src={ownerPhotos[0]?.ownerAvatar} />
                 <p className="text-sm text-ink/55 dark:text-paper/55">
-                  <span className="font-medium text-ink dark:text-paper">@{ownerName}</span> {photoTime(ownerPhotos[0])}
+                  <span className="font-medium text-ink dark:text-paper">{ownerName}</span> {photoTime(ownerPhotos[0])}
                 </p>
               </button>
               <PhotoGrid openPhoto={openPhoto} photos={ownerPhotos} sourcePhotos={photos} />
@@ -3433,8 +3447,8 @@ function MemberPanel({
       return;
     }
 
-    await notifyGroupMembers(group.id, `${profile.display_name} invited @${invitee.username} to ${group.name}.`);
-    setMessage(`Invite sent to @${invitee.username}.`);
+    await notifyGroupMembers(group.id, `${profile.display_name} invited ${invitee.username} to ${group.name}.`);
+    setMessage(`Invite sent to ${invitee.username}.`);
     setInvitee(null);
     await reload();
   }
@@ -3489,7 +3503,7 @@ function MemberPanel({
               onClick={() => setInvitee(null)}
               type="button"
             >
-              @{invitee.username}
+              {invitee.username}
               <X size={14} />
             </button>
           ) : (
