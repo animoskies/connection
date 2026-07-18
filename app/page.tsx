@@ -1554,13 +1554,6 @@ function ConnectionLogo({ className, compact = false }: { className?: string; co
           strokeLinejoin="round"
           strokeWidth="5.4"
         />
-        <path
-          d="M35.7 16.2c-2.4-3.2-6.2-5.1-10.7-5.2"
-          className="stroke-moss dark:stroke-skysoft"
-          strokeLinecap="round"
-          strokeWidth="3.1"
-        />
-        <circle cx="36.6" cy="31.3" r="2.6" className="fill-rust dark:fill-[#d8a08c]" />
       </svg>
       <span className="sr-only">Connection</span>
     </div>
