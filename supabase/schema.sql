@@ -378,6 +378,8 @@ begin
 end;
 $$;
 
+drop function if exists public.pending_group_notifications();
+
 create or replace function public.pending_group_notifications()
 returns table (
   id uuid,
@@ -385,6 +387,7 @@ returns table (
   group_name text,
   actor_name text,
   message text,
+  read_at timestamptz,
   created_at timestamptz
 )
 language sql
@@ -398,12 +401,12 @@ as $$
     g.name,
     coalesce(p.display_name, p.username),
     gn.message,
+    gn.read_at,
     gn.created_at
   from public.group_notifications gn
   join public.groups g on g.id = gn.group_id
   left join public.profiles p on p.id = gn.actor_id
   where gn.user_id = auth.uid()
-    and gn.read_at is null
   order by gn.created_at desc;
 $$;
 
@@ -683,6 +686,7 @@ drop policy if exists "Users can update their own profile" on public.profiles;
 drop policy if exists "Members can read groups" on public.groups;
 drop policy if exists "Users can create groups" on public.groups;
 drop policy if exists "Owners can update groups" on public.groups;
+drop policy if exists "Owners can delete groups" on public.groups;
 drop policy if exists "Members can read memberships" on public.group_members;
 drop policy if exists "Owners can add members" on public.group_members;
 drop policy if exists "Owners can manage members" on public.group_members;
@@ -744,6 +748,11 @@ create policy "Owners can update groups"
   to authenticated
   using (owner_id = auth.uid())
   with check (owner_id = auth.uid());
+
+create policy "Owners can delete groups"
+  on public.groups for delete
+  to authenticated
+  using (owner_id = auth.uid());
 
 create policy "Members can read memberships"
   on public.group_members for select

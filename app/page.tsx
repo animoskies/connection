@@ -96,6 +96,7 @@ type GroupNotification = {
   groupName: string;
   actorName: string;
   message: string;
+  readAt: string | null;
   createdAt: string;
 };
 
@@ -144,6 +145,7 @@ type GroupNotificationRow = {
   group_name: string | null;
   actor_name: string | null;
   message: string;
+  read_at: string | null;
   created_at: string;
 };
 
@@ -181,19 +183,20 @@ type ShareTarget =
 function isTransientMessage(message: string) {
   return [
     "Latest photos, groups, invites, notifications, and calendar loaded.",
-    "Photo posted to group.",
-    "Photo posted to connections.",
-    "Photo deleted.",
+    "Photo saved to group successfully.",
+    "Photo saved to connections successfully.",
+    "Photo deleted successfully.",
     "Connection request sent.",
     "Connection request accepted.",
     "Connection request declined.",
     "Connection removed.",
-    "Group created.",
-    "Group created. Invites sent.",
-    "Group name updated.",
-    "Calendar event added.",
-    "Calendar event updated.",
-    "Calendar event deleted.",
+    "Group saved successfully.",
+    "Group saved successfully. Invites sent.",
+    "Group updated successfully.",
+    "Group deleted successfully.",
+    "Calendar event added successfully.",
+    "Calendar event updated successfully.",
+    "Calendar event deleted successfully.",
     "Profile picture updated.",
     "Account settings updated.",
     "Dark mode on.",
@@ -233,6 +236,7 @@ function mapGroupNotification(row: GroupNotificationRow): GroupNotification {
     groupName: row.group_name ?? "Group",
     actorName: row.actor_name ?? "Someone",
     message: row.message,
+    readAt: row.read_at,
     createdAt: row.created_at
   };
 }
@@ -718,18 +722,21 @@ export default function Home() {
 
   async function markGroupNotificationRead(notificationId: string) {
     if (!supabase) return;
-    setMessage("");
 
     const { error } = await supabase.rpc("mark_group_notification_read", {
       notification_id: notificationId
     });
 
     if (error) {
-      setMessage(error.message);
+      setMessage(`Failed to update notification. ${error.message}`);
       return;
     }
 
-    setGroupNotifications((current) => current.filter((notification) => notification.id !== notificationId));
+    setGroupNotifications((current) =>
+      current.map((notification) =>
+        notification.id === notificationId ? { ...notification, readAt: new Date().toISOString() } : notification
+      )
+    );
   }
 
   async function loadConnections() {
@@ -983,7 +990,7 @@ export default function Home() {
     }
   }
 
-  async function uploadCapturedPhoto(src: string, target: ShareTarget) {
+  async function uploadCapturedPhoto(src: string, target: ShareTarget, caption = "") {
     if (!supabase || !profile) return;
 
     setPhotoUploading(true);
@@ -1007,13 +1014,16 @@ export default function Home() {
       });
 
     if (uploadError) {
-      setMessage(uploadError.message);
+      setMessage(`Failed to save photo. ${uploadError.message}`);
       setPhotoUploading(false);
       return;
     }
 
     const headers = await authHeaders();
-    if (!headers) return;
+    if (!headers) {
+      setPhotoUploading(false);
+      return;
+    }
 
     const groupId = target.type === "group" ? target.groupId : null;
 
@@ -1025,19 +1035,19 @@ export default function Home() {
       },
       body: JSON.stringify({
         title: "Untitled memory",
-        caption: "",
+        caption: caption.trim(),
         location: "",
         groupId,
         shareScope: target.type === "group" ? "group" : "connections",
         storagePath,
         takenAt: new Date().toISOString(),
-        tags: ["retro"]
+        tags: []
       })
     });
     const payload = await response.json();
 
     if (!response.ok) {
-      setMessage(payload.error ?? "Could not save photo.");
+      setMessage(`Failed to save photo. ${payload.error ?? "Please try again."}`);
       await supabase.storage.from("connection-photos").remove([storagePath]);
       setPhotoUploading(false);
       return;
@@ -1051,7 +1061,7 @@ export default function Home() {
       const group = groups.find((item) => item.id === target.groupId);
       await notifyGroupMembers(target.groupId, `${profile.display_name} posted a photo${group ? ` in ${group.name}` : ""}.`);
     }
-    setMessage(target.type === "group" ? "Photo posted to group." : "Photo posted to connections.");
+    setMessage(target.type === "group" ? "Photo saved to group successfully." : "Photo saved to connections successfully.");
     setPhotoUploading(false);
   }
 
@@ -1066,7 +1076,7 @@ export default function Home() {
     const payload = await response.json();
 
     if (!response.ok) {
-      setMessage(payload.error ?? "Could not delete photo.");
+      setMessage(`Failed to delete photo. ${payload.error ?? "Please try again."}`);
       return;
     }
 
@@ -1074,7 +1084,7 @@ export default function Home() {
     const remainingViewerIds = viewerPhotoIds.filter((id) => id !== photo.id);
     setViewerPhotoIds(remainingViewerIds);
     setSelectedPhotoId(remainingViewerIds[0] ?? null);
-    setMessage("Photo deleted.");
+    setMessage("Photo deleted successfully.");
   }
 
   const activeGroup = groups.find((group) => group.id === activeGroupId) ?? null;
@@ -1090,7 +1100,8 @@ export default function Home() {
   const calendarEvents =
     calendarGroupId === "all" ? events : events.filter((event) => event.group_id === calendarGroupId);
   const calendarGroup = groups.find((group) => group.id === calendarGroupId) ?? null;
-  const notificationCount = groupInvites.length + connectionRequests.length + groupNotifications.length;
+  const unreadGroupNotifications = groupNotifications.filter((notification) => !notification.readAt);
+  const notificationCount = groupInvites.length + connectionRequests.length + unreadGroupNotifications.length;
   const selectedConnection = connections.find((connection) => connection.id === selectedConnectionId) ?? null;
   const selectedDayEvents = useMemo(() => {
     return calendarEvents.filter((event) => localDateTime(event, preferredTimezone).toISODate() === selectedDate);
@@ -1157,6 +1168,11 @@ export default function Home() {
                 onAcceptGroup={(token) => void acceptInvite(token)}
                 onDeclineConnection={(requesterId) => void declineConnectionRequest(requesterId)}
                 onDeclineGroup={(token) => void declineInvite(token)}
+                onOpenGroupNotification={(groupId) => {
+                  setNotificationsOpen(false);
+                  setActiveGroupId(groupId);
+                  setActiveTab("groups");
+                }}
                 onReadGroupNotification={(notificationId) => void markGroupNotificationRead(notificationId)}
               />
             ) : null}
@@ -1297,7 +1313,7 @@ export default function Home() {
           photoUploading={photoUploading}
           src={pendingCaptureSrc}
           onCancel={() => setPendingCaptureSrc(null)}
-          onShare={(target) => void uploadCapturedPhoto(pendingCaptureSrc, target)}
+          onShare={(target, caption) => void uploadCapturedPhoto(pendingCaptureSrc, target, caption)}
         />
       ) : null}
       {pendingInvite ? (
@@ -1686,28 +1702,65 @@ function CalendarView({
 }) {
   const writableGroup = calendarGroup ?? groups[0] ?? null;
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
+  const [eventModalOpen, setEventModalOpen] = useState(false);
+  const [eventGroupId, setEventGroupId] = useState(writableGroup?.id ?? "");
   const editingEvent = editingEventId ? events.find((event) => event.id === editingEventId) ?? null : null;
-  const formGroup = editingEvent ? groups.find((group) => group.id === editingEvent.group_id) ?? writableGroup : writableGroup;
+  const editableGroups = groups.filter((group) => group.role === "owner" || group.role === "editor");
+  const formGroup =
+    groups.find((group) => group.id === eventGroupId) ??
+    (editingEvent ? groups.find((group) => group.id === editingEvent.group_id) : null) ??
+    writableGroup;
+
+  useEffect(() => {
+    if (eventModalOpen || editingEvent) return;
+    setEventGroupId(writableGroup?.id ?? "");
+  }, [eventModalOpen, editingEvent, writableGroup?.id]);
+
+  function openAddEvent() {
+    const defaultGroup =
+      calendarGroupId !== "all"
+        ? editableGroups.find((group) => group.id === calendarGroupId)
+        : editableGroups[0] ?? writableGroup;
+    setEditingEventId(null);
+    setEventGroupId(defaultGroup?.id ?? "");
+    setEventModalOpen(true);
+  }
+
+  function closeEventModal() {
+    setEditingEventId(null);
+    setEventModalOpen(false);
+  }
 
   async function deleteEvent(event: EventItem) {
     if (!supabase) return;
     setMessage("");
     const { error } = await supabase.from("events").delete().eq("id", event.id);
     if (error) {
-      setMessage(error.message);
+      setMessage(`Failed to delete calendar event. ${error.message}`);
       return;
     }
     if (editingEventId === event.id) setEditingEventId(null);
     const eventGroup = groups.find((group) => group.id === event.group_id);
     await notifyGroupMembers(event.group_id, `${profile.display_name} deleted ${event.title}${eventGroup ? ` from ${eventGroup.name}` : ""}.`);
     await reload();
-    setMessage("Calendar event deleted.");
+    setMessage("Calendar event deleted successfully.");
   }
 
   return (
     <section className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Calendar</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold">Calendar</h1>
+          <button
+            aria-label="Add event"
+            className="grid h-8 w-8 place-items-center text-ink/75 transition hover:text-ink disabled:opacity-35 dark:text-paper/75 dark:hover:text-paper"
+            disabled={!editableGroups.length}
+            onClick={openAddEvent}
+            type="button"
+          >
+            <Plus size={18} />
+          </button>
+        </div>
         <select
           className="max-w-[11rem] rounded-full border border-line bg-white px-3 py-2 text-sm text-ink outline-none dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
           value={calendarGroupId}
@@ -1747,31 +1800,39 @@ function CalendarView({
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <EventList
-          editableGroups={groups.filter((group) => group.role === "owner" || group.role === "editor").map((group) => group.id)}
+          editableGroups={editableGroups.map((group) => group.id)}
           emptyBody="Pick a date or add a shared plan for a group."
           events={selectedDayEvents}
           onDelete={(event) => void deleteEvent(event)}
           onEdit={(event) => {
             setCalendarGroupId(event.group_id);
             setEditingEventId(event.id);
+            setEventGroupId(event.group_id);
+            setEventModalOpen(true);
           }}
           timezone={timezone}
         />
-        {formGroup ? (
+        <EmptyPanel
+          title={editableGroups.length ? "Add with +" : "No editable groups"}
+          body={editableGroups.length ? "Use the plus next to Calendar when you are ready to add a shared plan." : "Create or join a group as an editor before adding calendar plans."}
+        />
+      </div>
+      {eventModalOpen && formGroup ? (
+        <div className="fixed inset-0 z-40 flex items-end bg-black/45 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-ink sm:items-center">
           <EventForm
             editingEvent={editingEvent}
             group={formGroup}
-            onCancelEdit={() => setEditingEventId(null)}
+            groups={editableGroups}
+            onCancelEdit={closeEventModal}
+            onGroupChange={setEventGroupId}
             notifyGroupMembers={notifyGroupMembers}
             profile={profile}
             reload={reload}
             selectedDate={selectedDate}
             setMessage={setMessage}
           />
-        ) : (
-          <EmptyPanel title="No groups yet" body="Create a group before adding calendar plans." />
-        )}
-      </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -1947,13 +2008,6 @@ function PhotoViewer({
         </div>
         <p className="text-sm text-ink/60">{photoTime(photo)}</p>
         <p className="mt-3">{photo.caption}</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {photo.tags.map((tag) => (
-            <span key={tag} className="rounded-full bg-paper px-3 py-1 text-xs">
-              #{tag}
-            </span>
-          ))}
-        </div>
         <div className="mt-5 flex justify-end border-t border-line pt-4">
           <button aria-label="Delete photo" className="grid h-10 w-10 place-items-center" onClick={() => onDelete(photo)} type="button">
             <Trash2 size={20} />
@@ -1975,8 +2029,10 @@ function SharePhotoSheet({
   photoUploading: boolean;
   src: string;
   onCancel: () => void;
-  onShare: (target: ShareTarget) => void;
+  onShare: (target: ShareTarget, caption: string) => void;
 }) {
+  const [caption, setCaption] = useState("");
+
   return (
     <div className="fixed inset-0 z-40 flex items-end bg-black/45 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-ink">
       <section className="mx-auto w-full max-w-md bg-white p-4 shadow-soft dark:bg-[#242420] dark:text-paper">
@@ -1994,11 +2050,19 @@ function SharePhotoSheet({
           <img alt="Captured preview" className={memoryPhotoClass} src={src} />
         </div>
 
+        <textarea
+          className="mb-4 min-h-24 w-full rounded-lg border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+          placeholder="Add a caption"
+          value={caption}
+          onChange={(event) => setCaption(event.target.value)}
+          disabled={photoUploading}
+        />
+
         <div className="grid gap-2">
           <button
             className="flex items-center justify-between border border-line px-3 py-3 text-left dark:border-white/15"
             disabled={photoUploading}
-            onClick={() => onShare({ type: "connections" })}
+            onClick={() => onShare({ type: "connections" }, caption)}
             type="button"
           >
             <span>
@@ -2013,7 +2077,7 @@ function SharePhotoSheet({
               key={group.id}
               className="flex items-center justify-between border border-line px-3 py-3 text-left dark:border-white/15"
               disabled={photoUploading}
-              onClick={() => onShare({ type: "group", groupId: group.id })}
+              onClick={() => onShare({ type: "group", groupId: group.id }, caption)}
               type="button"
             >
               <span>
@@ -2041,6 +2105,7 @@ function NotificationCenter({
   onAcceptGroup,
   onDeclineConnection,
   onDeclineGroup,
+  onOpenGroupNotification,
   onReadGroupNotification
 }: {
   connectionRequests: ConnectionRequest[];
@@ -2050,9 +2115,12 @@ function NotificationCenter({
   onAcceptGroup: (token: string) => void;
   onDeclineConnection: (requesterId: string) => void;
   onDeclineGroup: (token: string) => void;
+  onOpenGroupNotification: (groupId: string) => void;
   onReadGroupNotification: (notificationId: string) => void;
 }) {
-  const total = invites.length + connectionRequests.length + groupNotifications.length;
+  const unreadGroupNotifications = groupNotifications.filter((notification) => !notification.readAt);
+  const total = invites.length + connectionRequests.length + unreadGroupNotifications.length;
+  const hasHistory = Boolean(groupNotifications.length);
 
   return (
     <section className="absolute right-0 top-12 z-20 w-[min(23rem,calc(100vw-2rem))] rounded-lg border border-line bg-white p-4 text-left shadow-soft dark:border-white/15 dark:bg-[#242420]">
@@ -2060,19 +2128,32 @@ function NotificationCenter({
         <h2 className="font-semibold">Notifications</h2>
         {total ? <span className="text-xs text-ink/55 dark:text-paper/55">{total} pending</span> : null}
       </div>
-      {total ? (
+      {total || hasHistory ? (
         <div className="grid gap-3">
           {groupNotifications.map((notification) => (
             <article key={notification.id} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
-              <p className="text-sm font-semibold">{notification.groupName}</p>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-semibold">{notification.groupName}</p>
+                {notification.readAt ? <span className="text-[0.68rem] uppercase tracking-[0.16em] text-ink/35 dark:text-paper/35">Read</span> : null}
+              </div>
               <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">{notification.message}</p>
-              <button
-                className="mt-3 w-full rounded-full border border-line px-3 py-2 text-sm font-medium dark:border-white/15"
-                onClick={() => onReadGroupNotification(notification.id)}
-                type="button"
-              >
-                Done
-              </button>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  className="rounded-full bg-ink px-3 py-2 text-sm font-medium text-paper dark:bg-paper dark:text-ink"
+                  onClick={() => onOpenGroupNotification(notification.groupId)}
+                  type="button"
+                >
+                  Open
+                </button>
+                <button
+                  className="rounded-full border border-line px-3 py-2 text-sm font-medium disabled:opacity-35 dark:border-white/15"
+                  disabled={Boolean(notification.readAt)}
+                  onClick={() => onReadGroupNotification(notification.id)}
+                  type="button"
+                >
+                  Mark read
+                </button>
+              </div>
             </article>
           ))}
           {connectionRequests.map((request) => (
@@ -2589,7 +2670,7 @@ function GroupPanel({
   setMessage: (value: string) => void;
 }) {
   const [name, setName] = useState("");
-  const [memberNames, setMemberNames] = useState("");
+  const [selectedMembers, setSelectedMembers] = useState<ConnectionProfile[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [inviteGroupId, setInviteGroupId] = useState<string | null>(null);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
@@ -2610,42 +2691,36 @@ function GroupPanel({
     });
 
     if (groupError) {
-      setMessage(groupError.message);
+      setMessage(`Failed to create group. ${groupError.message}`);
       return;
     }
 
-    const usernames = [...new Set(memberNames.split(/[,\s]+/).map((member) => member.trim().replace(/^@/, "")).filter(Boolean))];
-    if (usernames.length) {
-      const { data: profiles, error: profileError } = await supabase
-        .from("profiles")
-        .select("id")
-        .in("username", usernames);
+    if (selectedMembers.length) {
+      const invites = selectedMembers
+        .filter((member) => member.id !== user.id)
+        .map((member) => ({
+          group_id: group.id,
+          token: crypto.randomUUID().replaceAll("-", ""),
+          role: "editor" as const,
+          created_by: user.id,
+          invitee_id: member.id
+        }));
 
-      if (profileError) {
-        setMessage(profileError.message);
-      } else {
-        const invites = (profiles ?? [])
-          .filter((profile) => profile.id !== user.id)
-          .map((profile) => ({
-            group_id: group.id,
-            token: crypto.randomUUID().replaceAll("-", ""),
-            role: "editor" as const,
-            created_by: user.id,
-            invitee_id: profile.id
-          }));
-
-        if (invites.length) {
-          const { error: inviteError } = await supabase.from("group_invites").insert(invites);
-          if (inviteError) setMessage(inviteError.message);
+      if (invites.length) {
+        const { error: inviteError } = await supabase.from("group_invites").insert(invites);
+        if (inviteError) {
+          setMessage(`Group saved, but failed to invite members. ${inviteError.message}`);
+          await reload();
+          return;
         }
       }
     }
 
     setName("");
-    setMemberNames("");
+    setSelectedMembers([]);
     setAddOpen(false);
     await reload();
-    setMessage(usernames.length ? "Group created. Invites sent." : "Group created.");
+    setMessage(selectedMembers.length ? "Group saved successfully. Invites sent." : "Group saved successfully.");
   }
 
   function startRename(group: Group) {
@@ -2665,7 +2740,7 @@ function GroupPanel({
       .eq("id", group.id);
 
     if (error) {
-      setMessage(error.message);
+      setMessage(`Failed to update group. ${error.message}`);
       return;
     }
 
@@ -2675,7 +2750,25 @@ function GroupPanel({
       await notifyGroupMembers(group.id, `${profile.display_name} renamed ${group.name} to ${editingName.trim()}.`);
     }
     await reload();
-    setMessage("Group name updated.");
+    setMessage("Group updated successfully.");
+  }
+
+  async function deleteGroup(group: Group) {
+    if (!supabase || group.role !== "owner") return;
+    const confirmed = window.confirm(`Delete ${group.name}? This removes its calendar, invites, and membership for everyone.`);
+    if (!confirmed) return;
+    setMessage("");
+
+    const { error } = await supabase.from("groups").delete().eq("id", group.id);
+
+    if (error) {
+      setMessage(`Failed to delete group. ${error.message}`);
+      return;
+    }
+
+    if (activeGroupId === group.id) setActiveGroupId(null);
+    await reload();
+    setMessage("Group deleted successfully.");
   }
 
   return (
@@ -2700,31 +2793,61 @@ function GroupPanel({
       </div>
 
       {addOpen ? (
-        <form className="mb-5 rounded-lg border border-white/70 bg-white/90 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]" onSubmit={createGroup}>
-          <div className="grid gap-3">
-            <input
-              className="rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
-              placeholder="Group name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              autoFocus
-            />
-            <input
-              className="rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
-              placeholder="Usernames, optional"
-              value={memberNames}
-              onChange={(event) => setMemberNames(event.target.value)}
-            />
-            <div className="flex justify-end gap-2">
-              <button className="rounded-full border border-line px-4 py-2 text-sm dark:border-white/15" onClick={() => setAddOpen(false)} type="button">
-                Cancel
-              </button>
-              <button className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-paper dark:bg-paper dark:text-ink">
-                Create
+        <div className="fixed inset-0 z-40 flex items-end bg-black/45 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-ink sm:items-center">
+          <form className="mx-auto w-full max-w-lg rounded-t-2xl border border-white/70 bg-white p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420] dark:text-paper sm:rounded-2xl" onSubmit={createGroup}>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Plus size={18} />
+                <h2 className="font-semibold">New group</h2>
+              </div>
+              <button
+                aria-label="Close new group"
+                className="grid h-9 w-9 place-items-center rounded-full border border-line dark:border-white/15"
+                onClick={() => setAddOpen(false)}
+                type="button"
+              >
+                <X size={17} />
               </button>
             </div>
-          </div>
-        </form>
+            <div className="grid gap-3">
+              <input
+                className="rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+                placeholder="Group name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                autoFocus
+              />
+              <UsernameSearchPicker
+                excludeIds={[profile.id, ...selectedMembers.map((member) => member.id)]}
+                onSelect={(member) => setSelectedMembers((current) => [...current, member])}
+                placeholder="Search username to invite"
+                setMessage={setMessage}
+              />
+              {selectedMembers.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {selectedMembers.map((member) => (
+                    <button
+                      key={member.id}
+                      className="rounded-full border border-line px-3 py-1 text-sm dark:border-white/15"
+                      onClick={() => setSelectedMembers((current) => current.filter((item) => item.id !== member.id))}
+                      type="button"
+                    >
+                      @{member.username} <X className="inline" size={13} />
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="flex justify-end gap-2">
+                <button className="rounded-full border border-line px-4 py-2 text-sm dark:border-white/15" onClick={() => setAddOpen(false)} type="button">
+                  Cancel
+                </button>
+                <button className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-paper dark:bg-paper dark:text-ink">
+                  Create
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
       ) : null}
 
       <div className="grid gap-3">
@@ -2784,6 +2907,16 @@ function GroupPanel({
                         <Pencil size={17} />
                       </button>
                     ) : null}
+                    {group.role === "owner" ? (
+                      <button
+                        aria-label={`Delete ${group.name}`}
+                        className="grid h-10 w-10 place-items-center rounded-full text-ink/60 transition hover:bg-paper dark:text-paper/60 dark:hover:bg-[#1d1d1a]"
+                        onClick={() => void deleteGroup(group)}
+                        type="button"
+                      >
+                        <Trash2 size={17} />
+                      </button>
+                    ) : null}
               <button
                 aria-label={`Invite to ${group.name}`}
                     className="grid h-10 w-10 place-items-center rounded-full border border-line bg-white/75 dark:border-white/15 dark:bg-[#1d1d1a]"
@@ -2824,6 +2957,82 @@ function GroupThumb({ groupId, photos }: { groupId: string; photos: PhotoItem[] 
     <span className="block h-16 w-16 overflow-hidden rounded-full bg-paper dark:bg-[#1d1d1a]">
       {image ? <img alt="" className={memoryPhotoClass} src={image} /> : null}
     </span>
+  );
+}
+
+function UsernameSearchPicker({
+  excludeIds,
+  onSelect,
+  placeholder,
+  setMessage
+}: {
+  excludeIds: string[];
+  onSelect: (profile: ConnectionProfile) => void;
+  placeholder: string;
+  setMessage: (value: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<ConnectionProfile[]>([]);
+  const excludeKey = excludeIds.join("|");
+
+  useEffect(() => {
+    if (!supabase || query.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      supabase
+        .rpc("search_profiles", { search_text: query.trim() })
+        .then(({ data, error }) => {
+          if (error) {
+            setMessage(`Failed to search users. ${error.message}`);
+            return;
+          }
+          setResults(
+            ((data ?? []) as ConnectionProfileRow[])
+              .map(mapConnectionProfile)
+              .filter((profile) => !excludeIds.includes(profile.id))
+          );
+        });
+    }, 220);
+
+    return () => window.clearTimeout(timeout);
+  }, [excludeKey, query, setMessage]);
+
+  function selectProfile(profile: ConnectionProfile) {
+    onSelect(profile);
+    setQuery("");
+    setResults([]);
+  }
+
+  return (
+    <div className="relative">
+      <input
+        className="w-full rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+        placeholder={placeholder}
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+      {results.length ? (
+        <div className="absolute inset-x-0 top-[calc(100%+0.35rem)] z-10 overflow-hidden rounded-lg border border-line bg-white shadow-soft dark:border-white/15 dark:bg-[#1d1d1a]">
+          {results.map((result) => (
+            <button
+              key={result.id}
+              className="flex w-full items-center gap-3 px-3 py-2 text-left transition hover:bg-paper dark:hover:bg-[#242420]"
+              onClick={() => selectProfile(result)}
+              type="button"
+            >
+              <Avatar name={result.displayName} src={result.avatarUrl} size="sm" />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium">{result.displayName}</span>
+                <span className="block truncate text-xs text-ink/55 dark:text-paper/55">@{result.username}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -2917,25 +3126,14 @@ function MemberPanel({
   reload: WorkspaceReload;
   setMessage: (value: string) => void;
 }) {
-  const [invite, setInvite] = useState("");
+  const [invitee, setInvitee] = useState<ConnectionProfile | null>(null);
   const [busyLink, setBusyLink] = useState(false);
   const [inviteLink, setInviteLink] = useState("");
 
   async function inviteMember(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !invite.trim()) return;
+    if (!supabase || !invitee) return;
     setMessage("");
-
-    const { data: inviteeProfile, error: profileError } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("username", invite.trim())
-      .maybeSingle();
-
-    if (profileError || !inviteeProfile) {
-      setMessage(profileError?.message ?? "No profile found for that username.");
-      return;
-    }
 
     const {
       data: { user }
@@ -2954,17 +3152,17 @@ function MemberPanel({
         token,
         role: "editor",
         created_by: user.id,
-        invitee_id: inviteeProfile.id
+        invitee_id: invitee.id
       });
 
     if (error) {
-      setMessage(error.message);
+      setMessage(`Failed to send invite. ${error.message}`);
       return;
     }
 
-    await notifyGroupMembers(group.id, `${profile.display_name} invited @${invite.trim()} to ${group.name}.`);
-    setInvite("");
-    setMessage(`Invite sent to @${invite.trim()}.`);
+    await notifyGroupMembers(group.id, `${profile.display_name} invited @${invitee.username} to ${group.name}.`);
+    setMessage(`Invite sent to @${invitee.username}.`);
+    setInvitee(null);
     await reload();
   }
 
@@ -2992,7 +3190,7 @@ function MemberPanel({
     });
 
     if (error) {
-      setMessage(error.message);
+      setMessage(`Failed to create invite link. ${error.message}`);
       setBusyLink(false);
       return;
     }
@@ -3011,16 +3209,28 @@ function MemberPanel({
         <h2 className="font-semibold">Invite</h2>
       </div>
       <form className="flex gap-2" onSubmit={inviteMember}>
-        <input
-          className="min-w-0 flex-1 rounded-full border border-line bg-white px-3 py-2 text-sm text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
-          placeholder="Username"
-          value={invite}
-          onChange={(event) => setInvite(event.target.value)}
-          disabled={group.role !== "owner"}
-        />
+        <div className="min-w-0 flex-1">
+          {invitee ? (
+            <button
+              className="flex w-full items-center justify-between rounded-full border border-line bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-[#1d1d1a]"
+              onClick={() => setInvitee(null)}
+              type="button"
+            >
+              @{invitee.username}
+              <X size={14} />
+            </button>
+          ) : (
+            <UsernameSearchPicker
+              excludeIds={[profile.id]}
+              onSelect={setInvitee}
+              placeholder="Search username"
+              setMessage={setMessage}
+            />
+          )}
+        </div>
         <button
           aria-label="Invite member"
-          disabled={group.role !== "owner"}
+          disabled={group.role !== "owner" || !invitee}
           className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-rust text-ink disabled:opacity-40"
         >
           <Send size={16} />
@@ -3210,8 +3420,10 @@ function EventList({
 function EventForm({
   editingEvent,
   group,
+  groups,
   notifyGroupMembers,
   onCancelEdit,
+  onGroupChange,
   profile,
   selectedDate,
   reload,
@@ -3219,8 +3431,10 @@ function EventForm({
 }: {
   editingEvent: EventItem | null;
   group: Group;
+  groups: Group[];
   notifyGroupMembers: (groupId: string, message: string) => Promise<void>;
   onCancelEdit: () => void;
+  onGroupChange: (groupId: string) => void;
   profile: Profile;
   selectedDate: string;
   reload: WorkspaceReload;
@@ -3267,7 +3481,7 @@ function EventForm({
     };
 
     const { error } = editingEvent
-      ? await supabase.from("events").update(payload).eq("id", editingEvent.id)
+      ? await supabase.from("events").update({ ...payload, group_id: group.id }).eq("id", editingEvent.id)
       : await supabase.from("events").insert({
           ...payload,
           group_id: group.id,
@@ -3275,7 +3489,7 @@ function EventForm({
         });
 
     if (error) {
-      setMessage(error.message);
+      setMessage(`Failed to save calendar event. ${error.message}`);
       return;
     }
 
@@ -3286,18 +3500,38 @@ function EventForm({
     setLocation("");
     onCancelEdit();
     await reload();
-    setMessage(`Calendar event ${action}.`);
+    setMessage(`Calendar event ${action} successfully.`);
   }
 
   const canEdit = group.role === "owner" || group.role === "editor";
 
   return (
-    <section className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
-      <div className="mb-4 flex items-center gap-2">
-        {editingEvent ? <Pencil size={18} /> : <Plus size={18} />}
-        <h2 className="font-semibold">{editingEvent ? "Edit event" : "Add event"}</h2>
+    <section className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-white/70 bg-white p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420] sm:rounded-2xl">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          {editingEvent ? <Pencil size={18} /> : <Plus size={18} />}
+          <h2 className="font-semibold">{editingEvent ? "Edit event" : "Add event"}</h2>
+        </div>
+        <button aria-label="Close event details" className="grid h-9 w-9 place-items-center rounded-full border border-line dark:border-white/15" onClick={onCancelEdit} type="button">
+          <X size={17} />
+        </button>
       </div>
       <form className="flex flex-col gap-3" onSubmit={saveEvent}>
+        <label className="flex flex-col gap-1 text-sm font-medium">
+          Group
+          <select
+            className="rounded-full border border-line bg-white px-3 py-2 text-sm font-normal text-ink outline-none transition focus:border-moss disabled:opacity-50 dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+            value={group.id}
+            onChange={(event) => onGroupChange(event.target.value)}
+            disabled={!canEdit}
+          >
+            {groups.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
         <Field label="Title" value={title} onChange={setTitle} required disabled={!canEdit} />
         <Field label="Location" value={location} onChange={setLocation} disabled={!canEdit} />
         <label className="flex flex-col gap-1 text-sm font-medium">
