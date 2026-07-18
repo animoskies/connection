@@ -2772,12 +2772,19 @@ function ConnectionLogo({ className, compact = false }: { className?: string; co
     <div
       className={clsx(
         "select-none text-center font-semibold lowercase tracking-normal text-ink dark:text-paper",
-        compact ? "text-2xl leading-none sm:text-3xl" : "text-3xl",
+        compact ? "leading-none" : "text-3xl",
         className
       )}
       aria-label="Connection"
     >
-      connection
+      {compact ? (
+        <span className="inline-flex items-baseline">
+          <span className="text-4xl leading-none sm:text-5xl">c</span>
+          <span className="text-3xl leading-none sm:text-4xl">onnection</span>
+        </span>
+      ) : (
+        "connection"
+      )}
     </div>
   );
 }
