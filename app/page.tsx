@@ -3981,9 +3981,9 @@ function EventList({
             key={event.id}
             className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]"
           >
-            <div className="flex items-start justify-between gap-3">
-              <button className="min-w-0 flex-1 text-left" onClick={() => (canEdit ? onEdit(event) : setActionEventId(event.id))} type="button">
-                <h3 className="truncate text-lg font-semibold">{event.title}</h3>
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+              <button className="min-w-0 text-left" onClick={() => (canEdit ? onEdit(event) : setActionEventId(event.id))} type="button">
+                <h3 className="line-clamp-2 break-words text-lg font-semibold leading-snug">{event.title}</h3>
                 {event.location ? <p className="text-sm text-ink/60 dark:text-paper/60">{event.location}</p> : null}
               </button>
               <div className="flex shrink-0 items-start gap-2">
