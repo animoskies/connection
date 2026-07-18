@@ -519,7 +519,6 @@ export default function Home() {
   const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [pendingInvite, setPendingInvite] = useState<InvitePreview | null>(null);
-  const [groupCreateSignal, setGroupCreateSignal] = useState(0);
   const notificationAreaRef = useRef<HTMLDivElement | null>(null);
   const pullStartRef = useRef<number | null>(null);
 
@@ -1393,33 +1392,22 @@ export default function Home() {
         ) : null}
         <header className="sticky top-0 z-20 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-3">
           <div className="flex items-center gap-2">
-            {activeTab === "groups" && !activeGroupId ? (
-              <button
-                aria-label="Add group"
-                className="grid h-11 w-11 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
-                onClick={() => setGroupCreateSignal((value) => value + 1)}
-                type="button"
-              >
-                <Plus size={30} strokeWidth={1.8} />
-              </button>
-            ) : (
-              <label
-                aria-label="Open camera"
-                className="grid h-11 w-11 cursor-pointer place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
-              >
-                <Plus size={30} strokeWidth={1.8} />
-                <input
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={(event) => {
-                    void handleNativePhoto(event.target.files?.[0] ?? null);
-                    event.target.value = "";
-                  }}
-                  type="file"
-                />
-              </label>
-            )}
+            <label
+              aria-label="Open camera"
+              className="grid h-11 w-11 cursor-pointer place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
+            >
+              <Plus size={30} strokeWidth={1.8} />
+              <input
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(event) => {
+                  void handleNativePhoto(event.target.files?.[0] ?? null);
+                  event.target.value = "";
+                }}
+                type="file"
+              />
+            </label>
             {activeTab === "connections" && !selectedConnectionId ? (
               <button
                 aria-label="Search"
@@ -1537,7 +1525,6 @@ export default function Home() {
           <GroupsView
             activeGroup={activeGroup}
             activeGroupId={activeGroupId}
-            addSignal={groupCreateSignal}
             groups={groups}
             notifyGroupMembers={notifyGroupMembers}
             onOpenGroupCalendar={(groupId) => {
@@ -1832,7 +1819,6 @@ function ConnectionSearchResult({
 function GroupsView({
   activeGroup,
   activeGroupId,
-  addSignal,
   groups,
   notifyGroupMembers,
   onOpenGroupCalendar,
@@ -1846,7 +1832,6 @@ function GroupsView({
 }: {
   activeGroup: Group | null;
   activeGroupId: string | null;
-  addSignal: number;
   groups: Group[];
   notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   onOpenGroupCalendar: (groupId: string) => void;
@@ -1867,7 +1852,6 @@ function GroupsView({
       {!activeGroup ? (
         <GroupPanel
           activeGroupId={activeGroupId}
-          addSignal={addSignal}
           groups={groups}
           notifyGroupMembers={notifyGroupMembers}
           photos={photos}
@@ -3035,7 +3019,6 @@ function AccountMenu({
 function GroupPanel({
   groups,
   activeGroupId,
-  addSignal,
   notifyGroupMembers,
   photos,
   profile,
@@ -3045,7 +3028,6 @@ function GroupPanel({
 }: {
   groups: Group[];
   activeGroupId: string | null;
-  addSignal: number;
   notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   photos: PhotoItem[];
   profile: Profile;
@@ -3060,16 +3042,6 @@ function GroupPanel({
   const [inviteGroupId, setInviteGroupId] = useState<string | null>(null);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
-  const handledAddSignalRef = useRef(addSignal);
-
-  useEffect(() => {
-    if (addSignal === handledAddSignalRef.current) return;
-    handledAddSignalRef.current = addSignal;
-    setInviteGroupId(null);
-    setActionGroupId(null);
-    setEditingGroupId(null);
-    setAddOpen(true);
-  }, [addSignal]);
 
   async function createGroup(event: FormEvent) {
     event.preventDefault();
@@ -3174,6 +3146,21 @@ function GroupPanel({
 
   return (
     <section>
+      <div className="mb-5 flex items-center justify-end">
+        <button
+          className="text-sm font-semibold text-ink transition hover:text-ink/70 dark:text-paper dark:hover:text-paper/70"
+          onClick={() => {
+            setInviteGroupId(null);
+            setActionGroupId(null);
+            setEditingGroupId(null);
+            setAddOpen(true);
+          }}
+          type="button"
+        >
+          Add
+        </button>
+      </div>
+
       {addOpen ? (
         <div className="fixed inset-0 z-40 flex items-end bg-black/45 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-ink sm:items-center">
           <form className="mx-auto w-full max-w-lg rounded-t-2xl border border-white/70 bg-white p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420] dark:text-paper sm:rounded-2xl" onSubmit={createGroup}>
