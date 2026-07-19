@@ -3389,14 +3389,21 @@ function AccountMenu({
   }
 
   return (
-    <div className="absolute right-0 top-12 z-20 w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-line bg-white p-4 text-left shadow-soft dark:border-white/15 dark:bg-[#242420]">
+    <div
+      className="fixed inset-0 z-40 flex items-start justify-center bg-black/25 px-3 pt-[calc(5.75rem+env(safe-area-inset-top))] text-ink backdrop-blur-sm dark:bg-black/55 dark:text-paper"
+      onClick={onClose}
+    >
+      <section
+        className="w-full max-w-lg rounded-2xl border border-line bg-white p-4 text-left shadow-soft dark:border-white/15 dark:bg-[#242420]"
+        onClick={(event) => event.stopPropagation()}
+      >
       <div className="mb-4 flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <Avatar name={displayName} src={avatarUrl} />
           <div className="min-w-0">
-          <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-rust">Settings</p>
-          <p className="text-sm font-semibold">{profile.display_name}</p>
-          <p className="text-xs text-ink/55 dark:text-paper/55">{profile.username}</p>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-rust">Settings</p>
+            <p className="text-sm font-semibold">{profile.display_name}</p>
+            <p className="text-xs text-ink/55 dark:text-paper/55">{profile.username}</p>
           </div>
         </div>
         <button
@@ -3443,6 +3450,7 @@ function AccountMenu({
         <LogOut size={15} />
         Sign out
       </button>
+      </section>
     </div>
   );
 }
