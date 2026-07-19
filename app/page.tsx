@@ -3658,25 +3658,25 @@ function GroupPanel({
           return (
             <article key={group.id} className="rounded-lg border border-white/70 bg-white/90 p-3 shadow-sm backdrop-blur dark:border-white/15 dark:bg-[#242420]">
               {isEditing ? (
-                <form className="grid grid-cols-[3.5rem_minmax(0,1fr)_4.75rem] items-center gap-2" onSubmit={(event) => void renameGroup(event, group)}>
-                  <GroupThumb groupId={group.id} photos={photos} className="h-14 w-14" />
+                <form className="grid grid-cols-[3rem_minmax(0,1fr)_4rem] items-center gap-2" onSubmit={(event) => void renameGroup(event, group)}>
+                  <GroupThumb groupId={group.id} photos={photos} className="h-12 w-12" />
                   <input
                     className="min-w-0 rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
                     value={editingName}
                     onChange={(event) => setEditingName(event.target.value)}
                     autoFocus
                   />
-                  <div className="flex justify-end gap-1.5">
-                    <button aria-label="Save group name" className="grid h-9 w-9 place-items-center rounded-full bg-ink text-paper dark:bg-paper dark:text-ink">
-                      <Check size={16} />
+                  <div className="flex justify-end gap-1">
+                    <button aria-label="Save group name" className="grid h-8 w-8 place-items-center rounded-full bg-ink text-paper dark:bg-paper dark:text-ink">
+                      <Check size={15} />
                     </button>
                     <button
                       aria-label="Cancel rename"
-                      className="grid h-9 w-9 place-items-center rounded-full border border-line dark:border-white/15"
+                      className="grid h-8 w-8 place-items-center rounded-full border border-line dark:border-white/15"
                       onClick={() => setEditingGroupId(null)}
                       type="button"
                     >
-                      <X size={16} />
+                      <X size={15} />
                     </button>
                   </div>
                 </form>
@@ -3881,7 +3881,7 @@ function GroupGallery({
 
   return (
     <section className="flex flex-col gap-7">
-      <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_5.5rem] items-start">
+      <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_8rem] items-start">
         <button aria-label="Back to groups" className="grid h-10 w-10 place-items-center" onClick={() => setActiveGroupId(null)}>
           <ArrowLeft size={23} />
         </button>
@@ -3905,12 +3905,20 @@ function GroupGallery({
             <CalendarDays size={20} />
           </button>
           <button
+            aria-label={`${group.name} members`}
+            className="grid h-10 w-10 place-items-center"
+            onClick={() => setMembersOpen(true)}
+            type="button"
+          >
+            <Users size={20} />
+          </button>
+          <button
             aria-label={`Invite to ${group.name}`}
             className="grid h-10 w-10 place-items-center"
             onClick={() => setInviteOpen((value) => !value)}
             type="button"
           >
-            <UserPlus size={20} />
+            <Plus size={22} />
           </button>
         </div>
       </div>
