@@ -4083,7 +4083,6 @@ function MemberPanel({
 }) {
   const [invitee, setInvitee] = useState<ConnectionProfile | null>(null);
   const [busyLink, setBusyLink] = useState(false);
-  const [inviteLink, setInviteLink] = useState("");
 
   async function inviteMember(event: FormEvent) {
     event.preventDefault();
@@ -4151,9 +4150,8 @@ function MemberPanel({
     }
 
     const inviteUrl = appUrl(`/?invite=${token}`);
-    setInviteLink(inviteUrl);
     const copied = await copyText(inviteUrl);
-    setMessage(copied ? "Invite link copied." : "Invite link created. Tap the link to copy it manually.");
+    setMessage(copied ? "Invite link copied." : "Could not copy invite link. Try again.");
     if (copied) onDone?.();
     setBusyLink(false);
   }
@@ -4201,28 +4199,6 @@ function MemberPanel({
           <Copy size={16} />
         </button>
       </form>
-      {inviteLink ? (
-        <div className="mt-3 grid gap-2">
-          <input
-            className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-xs text-ink outline-none dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
-            readOnly
-            value={inviteLink}
-            onFocus={(event) => event.target.select()}
-          />
-          <button
-            className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-paper dark:bg-paper dark:text-ink"
-            onClick={() =>
-              void copyText(inviteLink).then((copied) => {
-                setMessage(copied ? "Invite link copied." : "Select and copy the link manually.");
-                if (copied) onDone?.();
-              })
-            }
-            type="button"
-          >
-            Copy shown link
-          </button>
-        </div>
-      ) : null}
     </section>
   );
 }
