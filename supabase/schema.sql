@@ -25,9 +25,23 @@ alter table public.profiles
 create table if not exists public.groups (
   id uuid primary key default gen_random_uuid(),
   name text not null,
+  invite_token text not null unique default replace(gen_random_uuid()::text, '-', ''),
   owner_id uuid not null references public.profiles(id) on delete cascade,
   created_at timestamptz not null default now()
 );
+
+alter table public.groups
+  add column if not exists invite_token text;
+
+update public.groups
+set invite_token = replace(gen_random_uuid()::text, '-', '')
+where invite_token is null;
+
+alter table public.groups
+  alter column invite_token set default replace(gen_random_uuid()::text, '-', ''),
+  alter column invite_token set not null;
+
+create unique index if not exists groups_invite_token_idx on public.groups(invite_token);
 
 do $$
 begin
@@ -258,11 +272,24 @@ begin
 
   select * into invite
   from public.group_invites
-  where token = invite_token
+  where token = accept_group_invite.invite_token
   limit 1;
 
   if invite.id is null then
-    raise exception 'Invite link is invalid or expired';
+    select * into joined_group
+    from public.groups
+    where groups.invite_token = accept_group_invite.invite_token
+    limit 1;
+
+    if joined_group.id is null then
+      raise exception 'Invite link is invalid or expired';
+    end if;
+
+    insert into public.group_members (group_id, user_id, role)
+    values (joined_group.id, auth.uid(), 'editor')
+    on conflict (group_id, user_id) do nothing;
+
+    return joined_group;
   end if;
 
   if invite.accepted_at is not null then
@@ -301,6 +328,7 @@ set search_path = public
 as $$
 declare
   invite public.group_invites;
+  linked_group_id uuid;
 begin
   if auth.uid() is null then
     raise exception 'Authentication required';
@@ -308,11 +336,20 @@ begin
 
   select * into invite
   from public.group_invites
-  where token = invite_token
+  where token = decline_group_invite.invite_token
   limit 1;
 
   if invite.id is null then
-    raise exception 'Invite link is invalid or expired';
+    select id into linked_group_id
+    from public.groups
+    where groups.invite_token = decline_group_invite.invite_token
+    limit 1;
+
+    if linked_group_id is null then
+      raise exception 'Invite link is invalid or expired';
+    end if;
+
+    return;
   end if;
 
   if invite.invitee_id is not null and invite.invitee_id <> auth.uid() then
@@ -345,10 +382,19 @@ as $$
   from public.group_invites gi
   join public.groups g on g.id = gi.group_id
   join public.profiles p on p.id = gi.created_by
-  where gi.token = invite_token
+  where gi.token = $1
     and gi.accepted_at is null
     and gi.declined_at is null
     and (gi.invitee_id is null or gi.invitee_id = auth.uid())
+  union all
+  select
+    g.id,
+    g.name,
+    'editor'::public.group_role,
+    coalesce(p.display_name, p.username)
+  from public.groups g
+  join public.profiles p on p.id = g.owner_id
+  where g.invite_token = $1
   limit 1;
 $$;
 

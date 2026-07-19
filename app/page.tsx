@@ -46,6 +46,7 @@ type Group = {
   id: string;
   name: string;
   owner_id: string;
+  invite_token: string;
   owner_name: string;
   owner_username: string;
   role: "owner" | "editor" | "viewer";
@@ -817,7 +818,7 @@ export default function Home() {
 
     const { data: membershipData, error: membershipError } = await supabase
       .from("group_members")
-      .select("role, groups(id, name, owner_id, profiles!groups_owner_id_fkey(username, display_name))")
+      .select("role, groups(id, name, owner_id, invite_token, profiles!groups_owner_id_fkey(username, display_name))")
       .eq("user_id", userId)
       .order("created_at", { ascending: true });
 
@@ -843,6 +844,7 @@ export default function Home() {
                 id: group.id,
                 name: group.name,
                 owner_id: group.owner_id,
+                invite_token: group.invite_token,
                 owner_name: ownerProfile?.display_name ?? ownerProfile?.username ?? "Admin",
                 owner_username: normalizeUsername(ownerProfile?.username ?? "admin"),
                 role: membership.role,
@@ -4138,31 +4140,7 @@ function MemberPanel({
     setBusyLink(true);
     setMessage("");
 
-    const token = crypto.randomUUID().replaceAll("-", "");
-    const {
-      data: { user }
-    } = await supabase.auth.getUser();
-
-    if (!user) {
-      setMessage("Authentication required.");
-      setBusyLink(false);
-      return;
-    }
-
-    const { error } = await supabase.from("group_invites").insert({
-      group_id: group.id,
-      token,
-      role: "editor",
-      created_by: user.id
-    });
-
-    if (error) {
-      setMessage(`Failed to create invite link. ${error.message}`);
-      setBusyLink(false);
-      return;
-    }
-
-    const inviteUrl = appUrl(`/?invite=${token}`);
+    const inviteUrl = appUrl(`/?invite=${group.invite_token}`);
     const copied = await copyText(inviteUrl);
     setMessage(copied ? "Invite link copied." : "Could not copy invite link. Try again.");
     if (copied) onDone?.();
