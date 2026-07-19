@@ -3652,25 +3652,27 @@ function GroupPanel({
           return (
             <article key={group.id} className="rounded-lg border border-white/70 bg-white/90 p-3 shadow-sm backdrop-blur dark:border-white/15 dark:bg-[#242420]">
               {isEditing ? (
-                <form className="flex items-center gap-2" onSubmit={(event) => void renameGroup(event, group)}>
-                  <GroupThumb groupId={group.id} photos={photos} />
+                <form className="grid grid-cols-[3.5rem_minmax(0,1fr)_4.75rem] items-center gap-2" onSubmit={(event) => void renameGroup(event, group)}>
+                  <GroupThumb groupId={group.id} photos={photos} className="h-14 w-14" />
                   <input
-                    className="min-w-0 flex-1 rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+                    className="min-w-0 rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
                     value={editingName}
                     onChange={(event) => setEditingName(event.target.value)}
                     autoFocus
                   />
-                  <button aria-label="Save group name" className="grid h-10 w-10 place-items-center rounded-full bg-ink text-paper dark:bg-paper dark:text-ink">
-                    <Check size={17} />
-                  </button>
-                  <button
-                    aria-label="Cancel rename"
-                    className="grid h-10 w-10 place-items-center rounded-full border border-line dark:border-white/15"
-                    onClick={() => setEditingGroupId(null)}
-                    type="button"
-                  >
-                    <X size={17} />
-                  </button>
+                  <div className="flex justify-end gap-1.5">
+                    <button aria-label="Save group name" className="grid h-9 w-9 place-items-center rounded-full bg-ink text-paper dark:bg-paper dark:text-ink">
+                      <Check size={16} />
+                    </button>
+                    <button
+                      aria-label="Cancel rename"
+                      className="grid h-9 w-9 place-items-center rounded-full border border-line dark:border-white/15"
+                      onClick={() => setEditingGroupId(null)}
+                      type="button"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
                 </form>
               ) : (
                 <div className="grid grid-cols-[4rem_minmax(0,1fr)_auto] items-center gap-3">
@@ -3756,11 +3758,11 @@ function GroupPanel({
   );
 }
 
-function GroupThumb({ groupId, photos }: { groupId: string; photos: PhotoItem[] }) {
+function GroupThumb({ groupId, photos, className }: { groupId: string; photos: PhotoItem[]; className?: string }) {
   const image = photos.find((photo) => photo.groupId === groupId)?.src;
 
   return (
-    <span className="block h-16 w-16 overflow-hidden rounded-full bg-paper dark:bg-[#1d1d1a]">
+    <span className={clsx("block h-16 w-16 overflow-hidden rounded-full bg-paper dark:bg-[#1d1d1a]", className)}>
       {image ? <img alt="" className={memoryPhotoClass} src={image} /> : null}
     </span>
   );
