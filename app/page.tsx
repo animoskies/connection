@@ -3891,7 +3891,6 @@ function GroupGallery({
   setActiveGroupId: (id: string | null) => void;
 }) {
   const owners = [...new Set(photos.map((photo) => photo.ownerId))];
-  const [inviteOpen, setInviteOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
 
   return (
@@ -3934,23 +3933,12 @@ function GroupGallery({
         <GroupMembersSheet
           group={group}
           members={members}
+          notifyGroupMembers={notifyGroupMembers}
           onClose={() => setMembersOpen(false)}
-          onInvite={() => {
-            setMembersOpen(false);
-            setInviteOpen(true);
-          }}
           onOpenProfile={(member) => {
             setMembersOpen(false);
             onOpenProfile(member.id, member.displayName);
           }}
-        />
-      ) : null}
-
-      {inviteOpen ? (
-        <MemberPanel
-          group={group}
-          notifyGroupMembers={notifyGroupMembers}
-          onDone={() => setInviteOpen(false)}
           profile={profile}
           reload={reload}
           setMessage={setMessage}
@@ -3987,23 +3975,31 @@ function GroupGallery({
 function GroupMembersSheet({
   group,
   members,
+  notifyGroupMembers,
   onClose,
-  onInvite,
-  onOpenProfile
+  onOpenProfile,
+  profile,
+  reload,
+  setMessage
 }: {
   group: Group;
   members: GroupMember[];
+  notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   onClose: () => void;
-  onInvite: () => void;
   onOpenProfile: (member: GroupMember) => void;
+  profile: Profile;
+  reload: WorkspaceReload;
+  setMessage: (value: string) => void;
 }) {
+  const [inviteOpen, setInviteOpen] = useState(false);
+
   return (
     <div
-      className="fixed inset-0 z-40 flex items-end bg-black/30 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-ink backdrop-blur-sm dark:bg-black/55 sm:items-center"
+      className="fixed inset-0 z-40 flex items-start bg-black/30 px-3 pt-[calc(5.75rem+env(safe-area-inset-top))] text-ink backdrop-blur-sm dark:bg-black/55"
       onClick={onClose}
     >
       <section
-        className="mx-auto w-full max-w-lg rounded-t-2xl border border-white/70 bg-white p-4 shadow-soft dark:border-white/15 dark:bg-[#242420] dark:text-paper sm:rounded-2xl"
+        className="mx-auto w-full max-w-lg rounded-2xl border border-white/70 bg-white p-4 shadow-soft dark:border-white/15 dark:bg-[#242420] dark:text-paper"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between gap-3">
@@ -4017,7 +4013,7 @@ function GroupMembersSheet({
             <button
               aria-label={`Invite to ${group.name}`}
               className="grid h-9 w-9 place-items-center rounded-full border border-line dark:border-white/15"
-              onClick={onInvite}
+              onClick={() => setInviteOpen((value) => !value)}
               type="button"
             >
               <Plus size={18} />
@@ -4032,8 +4028,18 @@ function GroupMembersSheet({
             </button>
           </div>
         </div>
+        {inviteOpen ? (
+          <MemberPanel
+            group={group}
+            notifyGroupMembers={notifyGroupMembers}
+            onDone={() => setInviteOpen(false)}
+            profile={profile}
+            reload={reload}
+            setMessage={setMessage}
+          />
+        ) : null}
         {members.length ? (
-          <div className="grid max-h-[55vh] gap-2 overflow-y-auto overscroll-contain">
+          <div className={`${inviteOpen ? "mt-4" : ""} grid max-h-[55vh] gap-2 overflow-y-auto overscroll-contain`}>
             {members.map((member) => (
               <button
                 key={member.id}
@@ -4185,16 +4191,16 @@ function MemberPanel({
         >
           <Send size={16} />
         </button>
+        <button
+          aria-label="Copy invite link"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line text-ink disabled:opacity-40 dark:border-white/15 dark:text-paper"
+          disabled={group.role !== "owner" || busyLink}
+          onClick={() => void copyInviteLink()}
+          type="button"
+        >
+          <Copy size={16} />
+        </button>
       </form>
-      <button
-        className="mt-3 flex w-full items-center justify-center gap-2 rounded-full border border-line px-4 py-2.5 text-sm font-medium disabled:opacity-45 dark:border-white/15"
-        disabled={group.role !== "owner" || busyLink}
-        onClick={() => void copyInviteLink()}
-        type="button"
-      >
-        <Copy size={15} />
-        Copy invite link
-      </button>
       {inviteLink ? (
         <div className="mt-3 grid gap-2">
           <input
