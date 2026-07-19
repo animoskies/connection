@@ -1742,6 +1742,10 @@ export default function Home() {
       <BottomNav
         activeTab={activeTab}
         setActiveTab={(tab) => {
+          if (tab === "connections" && activeTab === "connections") {
+            setSelectedConnectionId(null);
+            setSelectedConnectionProfile(null);
+          }
           if (tab === "groups" && activeTab === "groups") {
             setActiveGroupId(null);
           }
