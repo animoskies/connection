@@ -1865,10 +1865,24 @@ function ConnectionsView({
 }) {
   const owners = [...new Set(photos.map((photo) => photo.ownerId))];
   const [connectionActionOpen, setConnectionActionOpen] = useState(false);
+  const connectionActionRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setConnectionActionOpen(false);
   }, [selectedConnection?.id]);
+
+  useEffect(() => {
+    if (!connectionActionOpen) return;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && connectionActionRef.current?.contains(target)) return;
+      setConnectionActionOpen(false);
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [connectionActionOpen]);
 
   if (selectedConnection) {
     const profilePhotos = photos.filter((photo) => photo.ownerId === selectedConnection.id);
@@ -1899,7 +1913,7 @@ function ConnectionsView({
                 <p className="mt-2 text-xs text-ink/45 dark:text-paper/45">{selectedConnection.preferredTimezone}</p>
               </div>
             </div>
-            <div className="relative shrink-0">
+            <div ref={connectionActionRef} className="relative shrink-0">
               <button
                 className={clsx(
                   "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium",
