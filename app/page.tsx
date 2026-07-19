@@ -4255,11 +4255,14 @@ function CalendarSurface({
   const agendaDays = eventDays.some((day) => day.toISODate() === selectedDay.toISODate())
     ? eventDays
     : [selectedDay, ...eventDays].sort((first, second) => first.toMillis() - second.toMillis());
+  const monthGridStart = selected.startOf("month").startOf("week");
+  const monthGridEnd = selected.endOf("month").endOf("week");
+  const monthGridDayCount = Math.round(monthGridEnd.diff(monthGridStart, "days").days) + 1;
   const days =
     view === "week"
       ? Array.from({ length: 7 }, (_, index) => selected.startOf("week").plus({ days: index }))
       : view === "month"
-        ? Array.from({ length: selected.daysInMonth ?? 30 }, (_, index) => selected.startOf("month").plus({ days: index }))
+        ? Array.from({ length: monthGridDayCount }, (_, index) => monthGridStart.plus({ days: index }))
         : agendaDays.length
           ? agendaDays
           : [today];
@@ -4269,6 +4272,8 @@ function CalendarSurface({
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-ink/65 dark:text-paper/65">
           <CalendarDays size={16} />
+          <span>{selected.toFormat("LLLL")}</span>
+          <span className="text-ink/35 dark:text-paper/35">/</span>
           <span>{timezone}</span>
         </div>
         <button
@@ -4291,6 +4296,7 @@ function CalendarSurface({
           const dayEvents = events.filter((event) => localDateTime(event, timezone).toISODate() === day.toISODate());
           const dayIso = day.toISODate() ?? selectedDate;
           const isSelected = dayIso === selectedDate;
+          const isOutsideMonth = view === "month" && !day.hasSame(selected, "month");
           function handleDateClick() {
             setSelectedDate(dayIso);
             const now = Date.now();
@@ -4313,7 +4319,8 @@ function CalendarSurface({
                 view === "month" && "min-h-14 p-1.5",
                 isSelected
                   ? "border-ink bg-ink text-paper shadow-sm dark:border-paper dark:bg-paper dark:text-ink"
-                  : "border-line bg-paper/80 text-ink hover:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+                  : "border-line bg-paper/80 text-ink hover:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper",
+                isOutsideMonth && "opacity-35"
               )}
               onClick={handleDateClick}
               onDoubleClick={() => {
