@@ -1874,57 +1874,59 @@ function ConnectionsView({
       selectedConnection.relationship === "pending_sent" || selectedConnection.relationship === "pending_received";
     return (
       <section className="flex flex-col gap-6">
-        <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
           <button className="grid h-10 w-10 place-items-center" onClick={onBack} type="button">
             <ArrowLeft size={21} />
           </button>
-          <div className="relative">
-            <button
-              className={clsx(
-                "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium",
-                selectedConnection.relationship === "none"
-                  ? "bg-ink text-paper dark:bg-paper dark:text-ink"
-                  : selectedConnection.relationship === "connected"
-                    ? "border border-[#1f73ff]/45 text-[#1f73ff]"
-                    : "border border-line text-ink/65 dark:border-white/15 dark:text-paper/65",
-                actionDisabled && "opacity-60"
-              )}
-              disabled={actionDisabled}
-              onClick={() => {
-                if (selectedConnection.relationship === "connected") {
-                  setConnectionActionOpen((value) => !value);
-                  return;
-                }
-                onSendRequest(selectedConnection.id);
-              }}
-              type="button"
-            >
-              {actionLabel}
-              {selectedConnection.relationship === "connected" ? <ChevronDown size={13} /> : null}
-            </button>
-            {selectedConnection.relationship === "connected" && connectionActionOpen ? (
-              <div className="absolute right-0 top-9 z-10 w-36 rounded-lg border border-line bg-white p-1 shadow-soft dark:border-white/15 dark:bg-[#242420]">
-                <button
-                  className="w-full rounded-md px-3 py-2 text-left text-xs font-medium text-rust transition hover:bg-paper dark:hover:bg-[#1d1d1a]"
-                  onClick={() => {
-                    setConnectionActionOpen(false);
-                    onRemoveConnection(selectedConnection.id);
-                  }}
-                  type="button"
-                >
-                  Remove
-                </button>
-              </div>
-            ) : null}
-          </div>
         </div>
         <section className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
-          <div className="flex items-center gap-4">
-            <Avatar name={selectedConnection.displayName} src={selectedConnection.avatarUrl} size="lg" />
-            <div className="min-w-0">
-              <h1 className="truncate text-2xl font-semibold">{selectedConnection.displayName}</h1>
-              <p className="text-sm text-ink/55 dark:text-paper/55">{selectedConnection.username}</p>
-              <p className="mt-2 text-xs text-ink/45 dark:text-paper/45">{selectedConnection.preferredTimezone}</p>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-4">
+              <Avatar name={selectedConnection.displayName} src={selectedConnection.avatarUrl} size="lg" />
+              <div className="min-w-0">
+                <h1 className="truncate text-2xl font-semibold">{selectedConnection.displayName}</h1>
+                <p className="text-sm text-ink/55 dark:text-paper/55">{selectedConnection.username}</p>
+                <p className="mt-2 text-xs text-ink/45 dark:text-paper/45">{selectedConnection.preferredTimezone}</p>
+              </div>
+            </div>
+            <div className="relative shrink-0">
+              <button
+                className={clsx(
+                  "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium",
+                  selectedConnection.relationship === "none"
+                    ? "bg-ink text-paper dark:bg-paper dark:text-ink"
+                    : selectedConnection.relationship === "connected"
+                      ? "border border-[#1f73ff]/45 text-[#1f73ff]"
+                      : "border border-line text-ink/65 dark:border-white/15 dark:text-paper/65",
+                  actionDisabled && "opacity-60"
+                )}
+                disabled={actionDisabled}
+                onClick={() => {
+                  if (selectedConnection.relationship === "connected") {
+                    setConnectionActionOpen((value) => !value);
+                    return;
+                  }
+                  onSendRequest(selectedConnection.id);
+                }}
+                type="button"
+              >
+                {actionLabel}
+                {selectedConnection.relationship === "connected" ? <ChevronDown size={13} /> : null}
+              </button>
+              {selectedConnection.relationship === "connected" && connectionActionOpen ? (
+                <div className="absolute right-0 top-9 z-10 w-44 rounded-lg border border-line bg-white p-1 shadow-soft dark:border-white/15 dark:bg-[#242420]">
+                  <button
+                    className="w-full rounded-md px-3 py-2 text-left text-xs font-medium text-rust transition hover:bg-paper dark:hover:bg-[#1d1d1a]"
+                    onClick={() => {
+                      setConnectionActionOpen(false);
+                      onRemoveConnection(selectedConnection.id);
+                    }}
+                    type="button"
+                  >
+                    Remove connection
+                  </button>
+                </div>
+              ) : null}
             </div>
           </div>
         </section>
