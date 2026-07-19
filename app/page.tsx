@@ -3673,7 +3673,7 @@ function GroupPanel({
           return (
             <article key={group.id} className="rounded-lg border border-white/70 bg-white/90 p-3 shadow-sm backdrop-blur dark:border-white/15 dark:bg-[#242420]">
               {isEditing ? (
-                <form ref={editingFormRef} className="grid grid-cols-[3rem_minmax(0,1fr)_4.25rem] items-center gap-3" onSubmit={(event) => void renameGroup(event, group)}>
+                <form ref={editingFormRef} className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-3 sm:grid-cols-[4rem_minmax(0,1fr)_5rem]" onSubmit={(event) => void renameGroup(event, group)}>
                   <GroupThumb groupId={group.id} photos={photos} className="h-12 w-12" />
                   <input
                     className="min-w-0 rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
@@ -3681,7 +3681,7 @@ function GroupPanel({
                     onChange={(event) => setEditingName(event.target.value)}
                     autoFocus
                   />
-                  <div className="flex justify-end gap-1.5">
+                  <div className="col-span-2 flex justify-end gap-2 sm:col-span-1">
                     <button aria-label="Save group name" className="grid h-8 w-8 place-items-center rounded-full bg-ink text-paper dark:bg-paper dark:text-ink">
                       <Check size={15} />
                     </button>
