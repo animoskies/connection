@@ -3473,6 +3473,21 @@ function GroupPanel({
   const [inviteGroupId, setInviteGroupId] = useState<string | null>(null);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
+  const editingFormRef = useRef<HTMLFormElement | null>(null);
+
+  useEffect(() => {
+    if (!editingGroupId) return;
+
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && editingFormRef.current?.contains(target)) return;
+      setEditingGroupId(null);
+      setEditingName("");
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [editingGroupId]);
 
   async function createGroup(event: FormEvent) {
     event.preventDefault();
@@ -3658,7 +3673,7 @@ function GroupPanel({
           return (
             <article key={group.id} className="rounded-lg border border-white/70 bg-white/90 p-3 shadow-sm backdrop-blur dark:border-white/15 dark:bg-[#242420]">
               {isEditing ? (
-                <form className="grid grid-cols-[3rem_minmax(0,1fr)_4rem] items-center gap-2" onSubmit={(event) => void renameGroup(event, group)}>
+                <form ref={editingFormRef} className="grid grid-cols-[3rem_minmax(0,1fr)_4.25rem] items-center gap-3" onSubmit={(event) => void renameGroup(event, group)}>
                   <GroupThumb groupId={group.id} photos={photos} className="h-12 w-12" />
                   <input
                     className="min-w-0 rounded-full border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
@@ -3666,7 +3681,7 @@ function GroupPanel({
                     onChange={(event) => setEditingName(event.target.value)}
                     autoFocus
                   />
-                  <div className="flex justify-end gap-1">
+                  <div className="flex justify-end gap-1.5">
                     <button aria-label="Save group name" className="grid h-8 w-8 place-items-center rounded-full bg-ink text-paper dark:bg-paper dark:text-ink">
                       <Check size={15} />
                     </button>
