@@ -108,7 +108,7 @@ type GroupInvite = {
 
 type GroupNotification = {
   id: string;
-  groupId: string;
+  groupId: string | null;
   groupName: string;
   actorName: string;
   message: string;
@@ -170,7 +170,7 @@ type PendingGroupInviteRow = {
 
 type GroupNotificationRow = {
   id: string;
-  group_id: string;
+  group_id: string | null;
   group_name: string | null;
   actor_name: string | null;
   message: string;
@@ -1073,10 +1073,20 @@ export default function Home() {
     setNotificationsOpen(false);
 
     if (type === "calendar_event") {
+      if (!groupId) {
+        setActiveTab("calendar");
+        return;
+      }
       setCalendarGroupId(groupId);
       if (eventDate) setSelectedDate(eventDate);
       if (eventId && action !== "deleted") setView("agenda");
       setActiveTab("calendar");
+      return;
+    }
+
+    if (action === "group_deleted" || !groupId) {
+      setActiveGroupId(null);
+      setActiveTab("groups");
       return;
     }
 
@@ -3574,7 +3584,9 @@ function GroupPanel({
     if (!confirmed) return;
     setMessage("");
 
-    const { error } = await supabase.from("groups").delete().eq("id", group.id);
+    const { error } = await supabase.rpc("delete_group", {
+      target_group_id: group.id
+    });
 
     if (error) {
       setMessage(`Failed to delete group. ${error.message}`);

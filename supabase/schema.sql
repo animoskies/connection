@@ -95,7 +95,7 @@ create index if not exists group_invites_invitee_id_idx on public.group_invites(
 
 create table if not exists public.group_notifications (
   id uuid primary key default gen_random_uuid(),
-  group_id uuid not null references public.groups(id) on delete cascade,
+  group_id uuid references public.groups(id) on delete set null,
   user_id uuid not null references public.profiles(id) on delete cascade,
   actor_id uuid references public.profiles(id) on delete set null,
   message text not null,
@@ -105,6 +105,9 @@ create table if not exists public.group_notifications (
 );
 
 alter table public.group_notifications
+  alter column group_id drop not null,
+  drop constraint if exists group_notifications_group_id_fkey,
+  add constraint group_notifications_group_id_fkey foreign key (group_id) references public.groups(id) on delete set null,
   add column if not exists actor_id uuid references public.profiles(id) on delete set null,
   add column if not exists metadata jsonb not null default '{}'::jsonb,
   add column if not exists read_at timestamptz;
@@ -450,6 +453,57 @@ begin
 end;
 $$;
 
+create or replace function public.delete_group(target_group_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_group public.groups;
+  admin_name text;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  select * into target_group
+  from public.groups
+  where id = target_group_id;
+
+  if target_group.id is null then
+    raise exception 'Group not found';
+  end if;
+
+  if target_group.owner_id <> auth.uid() then
+    raise exception 'Only admins can delete this group';
+  end if;
+
+  select coalesce(display_name, username) into admin_name
+  from public.profiles
+  where id = auth.uid();
+
+  insert into public.group_notifications (group_id, user_id, actor_id, message, metadata)
+  select
+    target_group_id,
+    gm.user_id,
+    auth.uid(),
+    coalesce(admin_name, 'Admin') || ' deleted ' || target_group.name || '.',
+    jsonb_build_object(
+      'type', 'group_member',
+      'action', 'group_deleted',
+      'groupId', target_group_id,
+      'groupName', target_group.name
+    )
+  from public.group_members gm
+  where gm.group_id = target_group_id
+    and gm.user_id <> auth.uid();
+
+  delete from public.groups
+  where id = target_group_id;
+end;
+$$;
+
 create or replace function public.decline_group_invite(invite_token text)
 returns void
 language plpgsql
@@ -604,14 +658,14 @@ as $$
   select
     gn.id,
     gn.group_id,
-    g.name,
+    coalesce(g.name, gn.metadata->>'groupName', 'Group'),
     coalesce(p.display_name, p.username),
     gn.message,
     gn.metadata,
     gn.read_at,
     gn.created_at
   from public.group_notifications gn
-  join public.groups g on g.id = gn.group_id
+  left join public.groups g on g.id = gn.group_id
   left join public.profiles p on p.id = gn.actor_id
   where gn.user_id = auth.uid()
   order by gn.created_at desc;
