@@ -2332,13 +2332,14 @@ function CalendarView({
     setEventToOpenId(null);
   }, [eventToOpenId, events, setEventToOpenId]);
 
-  function openAddEvent() {
+  function openAddEvent(date = selectedDate) {
     const defaultGroup =
       calendarGroupId !== "all"
         ? editableGroups.find((group) => group.id === calendarGroupId)
         : editableGroups[0] ?? writableGroup;
     setEditingEventId(null);
     setEventGroupId(defaultGroup?.id ?? "");
+    setSelectedDate(date);
     setEventModalOpen(true);
   }
 
@@ -2380,10 +2381,23 @@ function CalendarView({
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex items-center justify-end">
-        <div className="flex items-center gap-2">
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-[repeat(3,minmax(0,1fr))_minmax(9rem,12rem)]">
+        <div className="col-span-3 flex rounded-full border border-line bg-paper p-1 dark:border-white/15 dark:bg-[#1d1d1a] sm:col-span-3">
+          {(["agenda", "week", "month"] as ViewMode[]).map((mode) => (
+            <button
+              key={mode}
+              className={clsx(
+                "flex-1 rounded-full px-3 py-1.5 text-sm capitalize transition",
+                view === mode ? "bg-ink text-paper dark:bg-paper dark:text-ink" : "text-ink/70 dark:text-paper/70"
+              )}
+              onClick={() => setView(mode)}
+            >
+              {mode}
+            </button>
+          ))}
+        </div>
         <select
-          className="min-w-0 flex-1 rounded-full border border-white/70 bg-white/90 px-4 py-2 text-sm font-medium text-ink shadow-sm outline-none dark:border-white/15 dark:bg-[#242420] dark:text-paper sm:w-44"
+          className="col-span-3 rounded-full border border-line bg-paper px-4 py-2 text-sm font-medium text-ink outline-none dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper sm:col-span-1"
           value={calendarGroupId}
           onChange={(event) => setCalendarGroupId(event.target.value)}
         >
@@ -2394,45 +2408,22 @@ function CalendarView({
             </option>
           ))}
         </select>
-          <button
-            aria-label="Add event"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-white/70 bg-white/90 text-ink shadow-sm transition hover:bg-paper disabled:opacity-35 dark:border-white/15 dark:bg-[#242420] dark:text-paper"
-            disabled={!editableGroups.length}
-            onClick={openAddEvent}
-            type="button"
-          >
-            <Plus size={18} />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex rounded-full border border-line bg-paper p-1 dark:border-white/15 dark:bg-[#1d1d1a]">
-        {(["agenda", "week", "month"] as ViewMode[]).map((mode) => (
-          <button
-            key={mode}
-            className={clsx(
-              "flex-1 rounded-full px-3 py-1.5 text-sm capitalize transition",
-              view === mode ? "bg-ink text-paper dark:bg-paper dark:text-ink" : "text-ink/70 dark:text-paper/70"
-            )}
-            onClick={() => setView(mode)}
-          >
-            {mode}
-          </button>
-        ))}
       </div>
 
       <CalendarSurface
+        canCreateEvent={Boolean(editableGroups.length)}
         events={events}
+        onCreateEvent={(date) => openAddEvent(date)}
         selectedDate={selectedDate}
         setSelectedDate={setSelectedDate}
         timezone={timezone}
         view={view}
       />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid gap-4">
         <EventList
           editableGroups={editableGroups.map((group) => group.id)}
-          emptyBody="Pick a date or add a shared plan for a group."
+          emptyBody={editableGroups.length ? "Double-tap a calendar day to add a shared plan." : "Create or join a group as an editor before adding calendar plans."}
           events={selectedDayEvents}
           onDelete={(event) => void deleteEvent(event)}
           onEdit={(event) => {
@@ -2442,10 +2433,6 @@ function CalendarView({
             setEventModalOpen(true);
           }}
           timezone={timezone}
-        />
-        <EmptyPanel
-          title={editableGroups.length ? "Add with +" : "No editable groups"}
-          body={editableGroups.length ? "Use the plus next to Calendar when you are ready to add a shared plan." : "Create or join a group as an editor before adding calendar plans."}
         />
       </div>
       {eventModalOpen && formGroup ? (
@@ -4198,18 +4185,23 @@ function MemberPanel({
 }
 
 function CalendarSurface({
+  canCreateEvent,
   view,
   timezone,
   events,
+  onCreateEvent,
   selectedDate,
   setSelectedDate
 }: {
+  canCreateEvent: boolean;
   view: ViewMode;
   timezone: string;
   events: EventItem[];
+  onCreateEvent: (date: string) => void;
   selectedDate: string;
   setSelectedDate: (value: string) => void;
 }) {
+  const lastTapRef = useRef<{ date: string; time: number } | null>(null);
   const today = DateTime.now().setZone(timezone);
   const selected = DateTime.fromISO(selectedDate, { zone: timezone });
   const eventDays = [
@@ -4258,10 +4250,23 @@ function CalendarSurface({
       >
         {days.map((day) => {
           const dayEvents = events.filter((event) => localDateTime(event, timezone).toISODate() === day.toISODate());
-          const isSelected = day.toISODate() === selectedDate;
+          const dayIso = day.toISODate() ?? selectedDate;
+          const isSelected = dayIso === selectedDate;
+          function handleDateClick() {
+            setSelectedDate(dayIso);
+            const now = Date.now();
+            const lastTap = lastTapRef.current;
+            if (canCreateEvent && lastTap?.date === dayIso && now - lastTap.time < 360) {
+              lastTapRef.current = null;
+              onCreateEvent(dayIso);
+              return;
+            }
+            lastTapRef.current = { date: dayIso, time: now };
+          }
+
           return (
             <button
-              key={day.toISODate()}
+              key={dayIso}
               className={clsx(
                 "rounded-lg border text-left transition hover:-translate-y-0.5",
                 view === "agenda" && "aspect-square min-h-[4.75rem] p-2",
@@ -4271,7 +4276,12 @@ function CalendarSurface({
                   ? "border-ink bg-ink text-paper shadow-sm dark:border-paper dark:bg-paper dark:text-ink"
                   : "border-line bg-paper/80 text-ink hover:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
               )}
-              onClick={() => setSelectedDate(day.toISODate() ?? selectedDate)}
+              onClick={handleDateClick}
+              onDoubleClick={() => {
+                if (!canCreateEvent) return;
+                setSelectedDate(dayIso);
+                onCreateEvent(dayIso);
+              }}
             >
               <span className={clsx("block opacity-65", view === "month" ? "text-[0.65rem]" : "text-xs")}>
                 {day.toFormat("ccc")}
