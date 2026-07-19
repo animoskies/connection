@@ -239,6 +239,16 @@ type ShareTarget =
   | { type: "connections" }
   | { type: "group"; groupId: string };
 
+function normalizeUsername(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 24);
+}
+
+function usernameError(value: string) {
+  return /^[a-z0-9_]{3,24}$/.test(value)
+    ? ""
+    : "Username must be 3-24 lowercase letters, numbers, or underscores.";
+}
+
 function isTransientMessage(message: string) {
   return [
     "Latest photos, groups, invites, notifications, and calendar loaded.",
@@ -274,7 +284,7 @@ function isTransientMessage(message: string) {
 function mapConnectionProfile(row: ConnectionProfileRow): ConnectionProfile {
   return {
     id: row.id,
-    username: row.username,
+    username: normalizeUsername(row.username),
     displayName: row.display_name,
     preferredTimezone: row.preferred_timezone,
     avatarUrl: row.avatar_url ?? "",
@@ -286,7 +296,7 @@ function mapConnectionProfile(row: ConnectionProfileRow): ConnectionProfile {
 function mapConnectionRequest(row: ConnectionRequestRow): ConnectionRequest {
   return {
     requesterId: row.requester_id,
-    username: row.username,
+    username: normalizeUsername(row.username),
     displayName: row.display_name,
     preferredTimezone: row.preferred_timezone,
     avatarUrl: row.avatar_url ?? "",
@@ -312,7 +322,7 @@ function mapConnectionNotification(row: ConnectionNotificationRow): ConnectionNo
     id: row.id,
     actorId: row.actor_id,
     actorName: row.actor_name ?? "Someone",
-    actorUsername: row.actor_username ?? "user",
+    actorUsername: normalizeUsername(row.actor_username ?? "user"),
     actorAvatarUrl: row.actor_avatar_url ?? "",
     message: row.message,
     metadata: row.metadata ?? {},
@@ -803,7 +813,7 @@ export default function Home() {
       .maybeSingle();
 
     if (profileError) setMessage(profileError.message);
-    setProfile(profileData);
+    setProfile(profileData ? { ...profileData, username: normalizeUsername(profileData.username) } : null);
 
     const { data: membershipData, error: membershipError } = await supabase
       .from("group_members")
@@ -834,7 +844,7 @@ export default function Home() {
                 name: group.name,
                 owner_id: group.owner_id,
                 owner_name: ownerProfile?.display_name ?? ownerProfile?.username ?? "Admin",
-                owner_username: ownerProfile?.username ?? "admin",
+                owner_username: normalizeUsername(ownerProfile?.username ?? "admin"),
                 role: membership.role,
                 member_count: 1
               } as Group
@@ -864,7 +874,7 @@ export default function Home() {
           groupMembers.push({
             groupId: member.group_id,
             id: member.user_id,
-            username: memberProfile.username ?? "user",
+            username: normalizeUsername(memberProfile.username ?? "user"),
             displayName: memberProfile.display_name ?? memberProfile.username ?? "Member",
             avatarUrl: memberProfile.avatar_url ?? "",
             role: member.role,
@@ -3183,9 +3193,16 @@ function ProfileSetup({
     event.preventDefault();
     if (!supabase) return;
     setMessage("");
+    const cleanedUsername = normalizeUsername(username);
+    const validationMessage = usernameError(cleanedUsername);
+    if (validationMessage) {
+      setUsername(cleanedUsername);
+      setMessage(validationMessage);
+      return;
+    }
     const { error } = await supabase.from("profiles").insert({
       id: userId,
-      username,
+      username: cleanedUsername,
       display_name: displayName,
       preferred_timezone: timezone
     });
@@ -3209,7 +3226,7 @@ function ProfileSetup({
           Choose the name people see and the timezone your group calendar should use.
         </p>
         <form className="mt-5 flex flex-col gap-3" onSubmit={submit}>
-          <Field label="Username" value={username} onChange={setUsername} required />
+          <Field label="Username" value={username} onChange={(value) => setUsername(normalizeUsername(value))} required />
           <Field label="Display name" value={displayName} onChange={setDisplayName} required />
           <SelectField label="Preferred timezone" value={timezone} onChange={setTimezone} />
           {message ? <p className="text-sm text-rust dark:text-[#ffb49a]">{message}</p> : null}
@@ -3255,7 +3272,7 @@ function AccountMenu({
   setDarkMode: (value: boolean) => void;
   setMessage: (value: string) => void;
 }) {
-  const [username, setUsername] = useState(profile.username);
+  const [username, setUsername] = useState(normalizeUsername(profile.username));
   const [displayName, setDisplayName] = useState(profile.display_name);
   const [timezone, setTimezone] = useState(profile.preferred_timezone);
   const [avatarUrl, setAvatarUrl] = useState(profile.avatar_url ?? "");
@@ -3314,11 +3331,19 @@ function AccountMenu({
     if (!supabase) return;
     setBusy(true);
     setMessage("");
+    const cleanedUsername = normalizeUsername(username);
+    const validationMessage = usernameError(cleanedUsername);
+    if (validationMessage) {
+      setUsername(cleanedUsername);
+      setMessage(validationMessage);
+      setBusy(false);
+      return;
+    }
 
     const { error } = await supabase
       .from("profiles")
       .update({
-        username,
+        username: cleanedUsername,
         display_name: displayName,
         preferred_timezone: timezone,
         avatar_url: avatarUrl || null
@@ -3379,7 +3404,7 @@ function AccountMenu({
           />
           <span className="text-xs text-ink/55 dark:text-paper/55">Upload</span>
         </label>
-        <Field label="Username" value={username} onChange={setUsername} required />
+        <Field label="Username" value={username} onChange={(value) => setUsername(normalizeUsername(value))} required />
         <Field label="Display name" value={displayName} onChange={setDisplayName} required />
         <SelectField label="Timezone" value={timezone} onChange={setTimezone} />
         <button

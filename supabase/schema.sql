@@ -2,12 +2,22 @@ create extension if not exists "pgcrypto";
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
-  username text unique not null check (username ~ '^[a-zA-Z0-9_]{3,24}$'),
+  username text unique not null check (username ~ '^[a-z0-9_]{3,24}$'),
   display_name text not null,
   preferred_timezone text not null,
   avatar_url text,
   created_at timestamptz not null default now()
 );
+
+alter table public.profiles
+  drop constraint if exists profiles_username_check;
+
+update public.profiles
+set username = lower(username)
+where username <> lower(username);
+
+alter table public.profiles
+  add constraint profiles_username_check check (username ~ '^[a-z0-9_]{3,24}$');
 
 alter table public.profiles
   add column if not exists avatar_url text;

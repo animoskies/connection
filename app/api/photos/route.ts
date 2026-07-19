@@ -3,6 +3,10 @@ import { createSupabaseRouteClient } from "@/lib/supabase-route";
 
 const PHOTO_BUCKET = "connection-photos";
 
+function normalizeUsername(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 24);
+}
+
 type PhotoRow = {
   id: string;
   owner_id: string;
@@ -23,7 +27,7 @@ function photoPayload(row: PhotoRow, signedUrl: string) {
   return {
     id: row.id,
     ownerId: row.owner_id,
-    owner: row.profiles?.username ?? row.profiles?.display_name ?? "someone",
+    owner: normalizeUsername(row.profiles?.username ?? row.profiles?.display_name ?? "someone"),
     ownerAvatar: row.profiles?.avatar_url ?? "",
     groupId: row.group_id,
     group: row.groups?.name ?? "Ungrouped",
