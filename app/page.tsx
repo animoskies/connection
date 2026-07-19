@@ -1558,7 +1558,7 @@ export default function Home() {
             <span>{pullRefreshLabel}</span>
           </div>
         ) : null}
-        <header className="sticky top-0 z-20 flex items-center justify-between py-3">
+        <header className="sticky top-0 z-20 flex items-center justify-between border-b border-ink/[0.08] py-3 dark:border-paper/[0.12]">
           <div className="flex w-24 items-center gap-2">
             <label
               aria-label="Open camera"
