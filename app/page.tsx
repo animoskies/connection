@@ -660,6 +660,15 @@ export default function Home() {
   }, [notificationsOpen]);
 
   useEffect(() => {
+    if (!notificationsOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [notificationsOpen]);
+
+  useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
 
     if (process.env.NODE_ENV !== "production") {
@@ -2769,13 +2778,13 @@ function NotificationCenter({
   ].sort((first, second) => Date.parse(second.createdAt) - Date.parse(first.createdAt));
 
   return (
-    <section className="absolute right-0 top-12 z-20 w-[min(23rem,calc(100vw-2rem))] rounded-lg border border-line bg-white p-4 text-left shadow-soft dark:border-white/15 dark:bg-[#242420]">
+    <section className="fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] top-[5.25rem] z-20 flex flex-col rounded-lg border border-line bg-white p-4 text-left shadow-soft dark:border-white/15 dark:bg-[#242420] sm:absolute sm:inset-x-auto sm:bottom-auto sm:right-0 sm:top-12 sm:w-[min(23rem,calc(100vw-2rem))] sm:max-h-[min(34rem,calc(100dvh-7rem))]">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-semibold">Notifications</h2>
         {total ? <span className="text-xs text-ink/55 dark:text-paper/55">{total} pending</span> : null}
       </div>
       {total || hasHistory ? (
-        <div className="grid max-h-[min(32rem,calc(100dvh-9rem))] gap-3 overflow-y-auto pr-1">
+        <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto pr-1 sm:max-h-[min(32rem,calc(100dvh-9rem))]">
           {notificationItems.map((item) => {
             if (item.kind === "group") {
               const { notification } = item;
