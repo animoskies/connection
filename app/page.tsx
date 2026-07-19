@@ -2737,6 +2737,32 @@ function NotificationCenter({
   const unreadConnectionNotifications = connectionNotifications.filter((notification) => !notification.readAt);
   const total = invites.length + connectionRequests.length + unreadGroupNotifications.length + unreadConnectionNotifications.length;
   const hasHistory = Boolean(groupNotifications.length || connectionNotifications.length);
+  const notificationItems = [
+    ...groupNotifications.map((notification) => ({
+      id: `group:${notification.id}`,
+      createdAt: notification.createdAt,
+      kind: "group" as const,
+      notification
+    })),
+    ...connectionNotifications.map((notification) => ({
+      id: `connection:${notification.id}`,
+      createdAt: notification.createdAt,
+      kind: "connection" as const,
+      notification
+    })),
+    ...connectionRequests.map((request) => ({
+      id: `request:${request.requesterId}`,
+      createdAt: request.createdAt,
+      kind: "request" as const,
+      request
+    })),
+    ...invites.map((invite) => ({
+      id: `invite:${invite.id}`,
+      createdAt: invite.createdAt,
+      kind: "invite" as const,
+      invite
+    }))
+  ].sort((first, second) => Date.parse(second.createdAt) - Date.parse(first.createdAt));
 
   return (
     <section className="absolute right-0 top-12 z-20 w-[min(23rem,calc(100vw-2rem))] rounded-lg border border-line bg-white p-4 text-left shadow-soft dark:border-white/15 dark:bg-[#242420]">
@@ -2746,117 +2772,132 @@ function NotificationCenter({
       </div>
       {total || hasHistory ? (
         <div className="grid max-h-[min(32rem,calc(100dvh-9rem))] gap-3 overflow-y-auto pr-1">
-          {groupNotifications.map((notification) => (
-            <button
-              key={notification.id}
-              className={clsx(
-                "rounded-lg border p-3 text-left transition hover:border-ink/25 hover:bg-white dark:border-white/15 dark:hover:border-paper/25 dark:hover:bg-[#242420]",
-                notification.readAt
-                  ? "border-line bg-white dark:bg-[#1d1d1a]"
-                  : "border-moss/40 bg-skysoft/55 dark:bg-[#202923]"
-              )}
-              onClick={() => onOpenGroupNotification(notification)}
-              type="button"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">{notification.groupName}</p>
-                  <p className="mt-0.5 text-[0.68rem] uppercase tracking-[0.14em] text-ink/35 dark:text-paper/35">
-                    {notificationTime(notification.createdAt)}
+          {notificationItems.map((item) => {
+            if (item.kind === "group") {
+              const { notification } = item;
+              return (
+                <button
+                  key={item.id}
+                  className={clsx(
+                    "rounded-lg border p-3 text-left transition hover:border-ink/25 hover:bg-white dark:border-white/15 dark:hover:border-paper/25 dark:hover:bg-[#242420]",
+                    notification.readAt
+                      ? "border-line bg-white dark:bg-[#1d1d1a]"
+                      : "border-moss/40 bg-skysoft/55 dark:bg-[#202923]"
+                  )}
+                  onClick={() => onOpenGroupNotification(notification)}
+                  type="button"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{notification.groupName}</p>
+                      <p className="mt-0.5 text-[0.68rem] uppercase tracking-[0.14em] text-ink/35 dark:text-paper/35">
+                        {notificationTime(notification.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">{notification.message}</p>
+                  {typeof notification.metadata.summary === "string" ? (
+                    <p className="mt-2 rounded-md bg-white px-2 py-1.5 text-xs leading-5 text-ink/55 dark:bg-[#242420] dark:text-paper/55">
+                      {notification.metadata.summary}
+                    </p>
+                  ) : null}
+                </button>
+              );
+            }
+
+            if (item.kind === "connection") {
+              const { notification } = item;
+              return (
+                <button
+                  key={item.id}
+                  className={clsx(
+                    "rounded-lg border p-3 text-left transition hover:border-ink/25 hover:bg-white dark:border-white/15 dark:hover:border-paper/25 dark:hover:bg-[#242420]",
+                    notification.readAt
+                      ? "border-line bg-white dark:bg-[#1d1d1a]"
+                      : "border-moss/40 bg-skysoft/55 dark:bg-[#202923]"
+                  )}
+                  onClick={() => onOpenConnectionNotification(notification)}
+                  type="button"
+                >
+                  <div className="flex items-center gap-3">
+                    <Avatar name={notification.actorName} src={notification.actorAvatarUrl} size="sm" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{notification.actorName}</p>
+                      <p className="mt-0.5 text-[0.68rem] uppercase tracking-[0.14em] text-ink/35 dark:text-paper/35">
+                        {notificationTime(notification.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-ink/60 dark:text-paper/60">{notification.message}</p>
+                </button>
+              );
+            }
+
+            if (item.kind === "request") {
+              const { request } = item;
+              return (
+                <article key={item.id} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
+                  <div className="flex items-center gap-3">
+                    <Avatar name={request.displayName} src={request.avatarUrl} size="sm" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{request.displayName}</p>
+                      <p className="truncate text-xs text-ink/60 dark:text-paper/60">{request.username} wants to connect.</p>
+                      <p className="mt-1 text-[0.68rem] uppercase tracking-[0.14em] text-ink/35 dark:text-paper/35">
+                        {notificationTime(request.createdAt)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      className="rounded-full bg-ink px-3 py-2 text-sm font-medium text-paper dark:bg-paper dark:text-ink"
+                      onClick={() => onAcceptConnection(request.requesterId)}
+                      type="button"
+                    >
+                      Accept
+                    </button>
+                    <button
+                      className="rounded-full border border-line px-3 py-2 text-sm font-medium dark:border-white/15"
+                      onClick={() => onDeclineConnection(request.requesterId)}
+                      type="button"
+                    >
+                      Decline
+                    </button>
+                  </div>
+                </article>
+              );
+            }
+
+            const { invite } = item;
+            return (
+              <article key={item.id} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-semibold">{invite.groupName}</p>
+                  <p className="text-[0.68rem] uppercase tracking-[0.14em] text-ink/35 dark:text-paper/35">
+                    {notificationTime(invite.createdAt)}
                   </p>
                 </div>
-              </div>
-              <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">{notification.message}</p>
-              {typeof notification.metadata.summary === "string" ? (
-                <p className="mt-2 rounded-md bg-white px-2 py-1.5 text-xs leading-5 text-ink/55 dark:bg-[#242420] dark:text-paper/55">
-                  {notification.metadata.summary}
+                <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">
+                  {invite.inviterName} invited you as {invite.role}.
                 </p>
-              ) : null}
-            </button>
-          ))}
-          {connectionNotifications.map((notification) => (
-            <button
-              key={notification.id}
-              className={clsx(
-                "rounded-lg border p-3 text-left transition hover:border-ink/25 hover:bg-white dark:border-white/15 dark:hover:border-paper/25 dark:hover:bg-[#242420]",
-                notification.readAt
-                  ? "border-line bg-white dark:bg-[#1d1d1a]"
-                  : "border-moss/40 bg-skysoft/55 dark:bg-[#202923]"
-              )}
-              onClick={() => onOpenConnectionNotification(notification)}
-              type="button"
-            >
-              <div className="flex items-center gap-3">
-                <Avatar name={notification.actorName} src={notification.actorAvatarUrl} size="sm" />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">{notification.actorName}</p>
-                  <p className="mt-0.5 text-[0.68rem] uppercase tracking-[0.14em] text-ink/35 dark:text-paper/35">
-                    {notificationTime(notification.createdAt)}
-                  </p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    className="rounded-full bg-ink px-3 py-2 text-sm font-medium text-paper dark:bg-paper dark:text-ink"
+                    onClick={() => onAcceptGroup(invite.token)}
+                    type="button"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    className="rounded-full border border-line px-3 py-2 text-sm font-medium dark:border-white/15"
+                    onClick={() => onDeclineGroup(invite.token)}
+                    type="button"
+                  >
+                    Decline
+                  </button>
                 </div>
-              </div>
-              <p className="mt-2 text-xs leading-5 text-ink/60 dark:text-paper/60">{notification.message}</p>
-            </button>
-          ))}
-          {connectionRequests.map((request) => (
-            <article key={request.requesterId} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
-              <div className="flex items-center gap-3">
-                <Avatar name={request.displayName} src={request.avatarUrl} size="sm" />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold">{request.displayName}</p>
-                  <p className="truncate text-xs text-ink/60 dark:text-paper/60">{request.username} wants to connect.</p>
-                  <p className="mt-1 text-[0.68rem] uppercase tracking-[0.14em] text-ink/35 dark:text-paper/35">
-                    {notificationTime(request.createdAt)}
-                  </p>
-                </div>
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <button
-                  className="rounded-full bg-ink px-3 py-2 text-sm font-medium text-paper dark:bg-paper dark:text-ink"
-                  onClick={() => onAcceptConnection(request.requesterId)}
-                  type="button"
-                >
-                  Accept
-                </button>
-                <button
-                  className="rounded-full border border-line px-3 py-2 text-sm font-medium dark:border-white/15"
-                  onClick={() => onDeclineConnection(request.requesterId)}
-                  type="button"
-                >
-                  Decline
-                </button>
-              </div>
-            </article>
-          ))}
-          {invites.map((invite) => (
-            <article key={invite.id} className="rounded-lg border border-line bg-paper p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-semibold">{invite.groupName}</p>
-                <p className="text-[0.68rem] uppercase tracking-[0.14em] text-ink/35 dark:text-paper/35">
-                  {notificationTime(invite.createdAt)}
-                </p>
-              </div>
-              <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">
-                {invite.inviterName} invited you as {invite.role}.
-              </p>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <button
-                  className="rounded-full bg-ink px-3 py-2 text-sm font-medium text-paper dark:bg-paper dark:text-ink"
-                  onClick={() => onAcceptGroup(invite.token)}
-                  type="button"
-                >
-                  Accept
-                </button>
-                <button
-                  className="rounded-full border border-line px-3 py-2 text-sm font-medium dark:border-white/15"
-                  onClick={() => onDeclineGroup(invite.token)}
-                  type="button"
-                >
-                  Decline
-                </button>
-              </div>
-            </article>
-          ))}
+              </article>
+            );
+          })}
         </div>
       ) : (
         <p className="text-sm text-ink/60 dark:text-paper/60">No new notifications.</p>
