@@ -129,6 +129,28 @@ alter table public.connection_notifications
 
 create index if not exists connection_notifications_user_id_idx on public.connection_notifications(user_id, read_at, created_at desc);
 
+insert into public.group_notifications (group_id, user_id, actor_id, message, metadata, read_at, created_at)
+select
+  gi.group_id,
+  gi.invitee_id,
+  gi.invitee_id,
+  'You joined ' || g.name || '.',
+  jsonb_build_object('type', 'group_member', 'action', 'joined_self', 'groupId', gi.group_id),
+  gi.accepted_at,
+  gi.accepted_at
+from public.group_invites gi
+join public.groups g on g.id = gi.group_id
+where gi.accepted_at is not null
+  and gi.invitee_id is not null
+  and not exists (
+    select 1
+    from public.group_notifications gn
+    where gn.group_id = gi.group_id
+      and gn.user_id = gi.invitee_id
+      and gn.metadata->>'type' = 'group_member'
+      and gn.metadata->>'action' = 'joined_self'
+  );
+
 create table if not exists public.connections (
   requester_id uuid not null references public.profiles(id) on delete cascade,
   addressee_id uuid not null references public.profiles(id) on delete cascade,
@@ -299,6 +321,15 @@ begin
       where id = auth.uid();
 
       insert into public.group_notifications (group_id, user_id, actor_id, message, metadata)
+      values (
+        joined_group.id,
+        auth.uid(),
+        auth.uid(),
+        'You joined ' || joined_group.name || '.',
+        jsonb_build_object('type', 'group_member', 'action', 'joined_self', 'groupId', joined_group.id)
+      );
+
+      insert into public.group_notifications (group_id, user_id, actor_id, message, metadata)
       select
         joined_group.id,
         gm.user_id,
@@ -343,6 +374,15 @@ begin
     select coalesce(display_name, username) into accepting_name
     from public.profiles
     where id = auth.uid();
+
+    insert into public.group_notifications (group_id, user_id, actor_id, message, metadata)
+    values (
+      joined_group.id,
+      auth.uid(),
+      auth.uid(),
+      'You joined ' || joined_group.name || '.',
+      jsonb_build_object('type', 'group_member', 'action', 'joined_self', 'groupId', joined_group.id)
+    );
 
     insert into public.group_notifications (group_id, user_id, actor_id, message, metadata)
     select
