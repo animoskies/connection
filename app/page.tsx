@@ -1691,6 +1691,12 @@ export default function Home() {
               setSelectedConnectionProfile(null);
             }}
             onOpenProfile={(profileId) => {
+              if (profileId === profile.id) {
+                setSelectedConnectionId(null);
+                setSelectedConnectionProfile(null);
+                setActiveTab("profile");
+                return;
+              }
               setSelectedConnectionId(profileId);
               setSelectedConnectionProfile(null);
             }}
