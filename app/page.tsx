@@ -2724,73 +2724,63 @@ function SharePhotoSheet({
   const [caption, setCaption] = useState("");
   const [selectedTarget, setSelectedTarget] = useState<ShareTarget>({ type: "connections" });
   const selectedKey = selectedTarget.type === "group" ? `group:${selectedTarget.groupId}` : "connections";
+  const destinationOptions = [
+    { label: "All connections", value: "connections" },
+    ...groups.map((group) => ({ label: group.name, value: `group:${group.id}` }))
+  ];
+
+  function updateDestination(value: string) {
+    if (value === "connections") {
+      setSelectedTarget({ type: "connections" });
+      return;
+    }
+    const groupId = value.replace("group:", "");
+    setSelectedTarget({ type: "group", groupId });
+  }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end bg-black/45 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-ink">
-      <section className="mx-auto w-full max-w-md bg-white p-4 shadow-soft dark:bg-[#242420] dark:text-paper">
+    <div className="fixed inset-0 z-40 bg-white text-ink dark:bg-[#151512] dark:text-paper">
+      <section className="mx-auto flex h-full w-full max-w-xl flex-col px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-[calc(1rem+env(safe-area-inset-top))]">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold">Share to</h2>
-            <p className="text-sm text-ink/55 dark:text-paper/55">Choose where this photo should live.</p>
+            <h2 className="text-lg font-semibold">New photo</h2>
+            <p className="text-sm text-ink/55 dark:text-paper/55">Add a caption and choose where it lives.</p>
           </div>
           <button className="text-sm text-ink/60 dark:text-paper/60" onClick={onCancel} type="button">
             Cancel
           </button>
         </div>
 
-        <div className="mb-4 aspect-square w-full overflow-hidden bg-paper dark:bg-[#1d1d1a]">
-          <img alt="Captured preview" className={memoryPhotoClass} src={src} />
+        <div className="mb-4 flex min-h-0 flex-1 items-center justify-center bg-paper dark:bg-[#1d1d1a]">
+          <img alt="Captured preview" className="max-h-full max-w-full object-contain" src={src} />
         </div>
 
         <textarea
-          className="mb-4 min-h-24 w-full rounded-lg border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+          className="mb-3 min-h-20 w-full rounded-lg border border-line bg-white px-3 py-2 text-base text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
           placeholder="Add a caption"
           value={caption}
           onChange={(event) => setCaption(event.target.value)}
           disabled={photoUploading}
         />
 
-        <div className="grid gap-2">
-          <button
-            className={clsx(
-              "flex items-center justify-between border px-3 py-3 text-left transition dark:border-white/15",
-              selectedKey === "connections" ? "border-ink bg-paper dark:border-paper dark:bg-[#1d1d1a]" : "border-line"
-            )}
+        <label className="mb-3 flex flex-col gap-1 text-sm font-medium">
+          Destination
+          <select
+            className="rounded-full border border-line bg-white px-3 py-2 text-sm font-normal text-ink outline-none transition focus:border-moss disabled:opacity-50 dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
             disabled={photoUploading}
-            onClick={() => setSelectedTarget({ type: "connections" })}
-            type="button"
+            value={selectedKey}
+            onChange={(event) => updateDestination(event.target.value)}
           >
-            <span>
-              <span className="block font-medium">All connections</span>
-              <span className="block text-sm text-ink/55 dark:text-paper/55">Visible to your accepted connections.</span>
-            </span>
-            <Users size={18} />
-          </button>
-
-          {groups.map((group) => (
-            <button
-              key={group.id}
-              className={clsx(
-                "flex items-center justify-between border px-3 py-3 text-left transition dark:border-white/15",
-                selectedKey === `group:${group.id}` ? "border-ink bg-paper dark:border-paper dark:bg-[#1d1d1a]" : "border-line"
-              )}
-              disabled={photoUploading}
-              onClick={() => setSelectedTarget({ type: "group", groupId: group.id })}
-              type="button"
-            >
-              <span>
-                <span className="block font-medium">{group.name}</span>
-                <span className="block text-sm text-ink/55 dark:text-paper/55">
-                  {group.member_count} {group.member_count === 1 ? "member" : "members"}
-                </span>
-              </span>
-              <Users size={18} />
-            </button>
-          ))}
-        </div>
+            {destinationOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <button
-          className="mt-4 w-full rounded-full bg-ink px-4 py-3 font-medium text-paper transition disabled:opacity-45 dark:bg-paper dark:text-ink"
+          className="w-full rounded-full bg-ink px-4 py-3 font-medium text-paper transition disabled:opacity-45 dark:bg-paper dark:text-ink"
           disabled={photoUploading}
           onClick={() => onShare(selectedTarget, caption)}
           type="button"
