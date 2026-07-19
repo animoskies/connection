@@ -4152,12 +4152,26 @@ function CalendarSurface({
 }) {
   const today = DateTime.now().setZone(timezone);
   const selected = DateTime.fromISO(selectedDate, { zone: timezone });
+  const eventDays = [
+    ...new Map(
+      events
+        .map((event) => localDateTime(event, timezone).startOf("day"))
+        .sort((first, second) => first.toMillis() - second.toMillis())
+        .map((day) => [day.toISODate(), day])
+    ).values()
+  ];
+  const selectedDay = selected.startOf("day");
+  const agendaDays = eventDays.some((day) => day.toISODate() === selectedDay.toISODate())
+    ? eventDays
+    : [selectedDay, ...eventDays].sort((first, second) => first.toMillis() - second.toMillis());
   const days =
     view === "week"
       ? Array.from({ length: 7 }, (_, index) => selected.startOf("week").plus({ days: index }))
       : view === "month"
         ? Array.from({ length: selected.daysInMonth ?? 30 }, (_, index) => selected.startOf("month").plus({ days: index }))
-        : Array.from({ length: 5 }, (_, index) => today.plus({ days: index }));
+        : agendaDays.length
+          ? agendaDays
+          : [today];
 
   return (
     <section className="rounded-lg border border-white/70 bg-white/85 p-3 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
@@ -4176,8 +4190,10 @@ function CalendarSurface({
       </div>
       <div
         className={clsx(
-          "grid gap-2 overflow-x-auto pb-1",
-          view === "month" ? "grid-cols-7" : "grid-cols-[repeat(5,minmax(4.75rem,1fr))] sm:grid-cols-7"
+          "grid gap-2 pb-1",
+          view === "agenda" && "grid-flow-col auto-cols-[4.75rem] overflow-x-auto",
+          view === "week" && "grid-cols-4 sm:grid-cols-7",
+          view === "month" && "grid-cols-7 gap-1"
         )}
       >
         {days.map((day) => {
@@ -4187,19 +4203,24 @@ function CalendarSurface({
             <button
               key={day.toISODate()}
               className={clsx(
-                "aspect-square min-h-[4.75rem] rounded-lg border p-2 text-left transition hover:-translate-y-0.5 sm:min-h-20",
+                "rounded-lg border text-left transition hover:-translate-y-0.5",
+                view === "agenda" && "aspect-square min-h-[4.75rem] p-2",
+                view === "week" && "min-h-[4.25rem] p-2",
+                view === "month" && "min-h-14 p-1.5",
                 isSelected
                   ? "border-ink bg-ink text-paper shadow-sm dark:border-paper dark:bg-paper dark:text-ink"
                   : "border-line bg-paper/80 text-ink hover:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
               )}
               onClick={() => setSelectedDate(day.toISODate() ?? selectedDate)}
             >
-              <span className="block text-xs opacity-65">{day.toFormat("ccc")}</span>
-              <span className="text-lg font-semibold">{day.day}</span>
+              <span className={clsx("block opacity-65", view === "month" ? "text-[0.65rem]" : "text-xs")}>
+                {day.toFormat("ccc")}
+              </span>
+              <span className={clsx("font-semibold", view === "month" ? "text-base" : "text-lg")}>{day.day}</span>
               {dayEvents.length ? (
-                <span className="mt-1 flex gap-1">
+                <span className={clsx("flex gap-1", view === "month" ? "mt-0.5" : "mt-1")}>
                   {dayEvents.slice(0, 3).map((event) => (
-                    <span key={event.id} className="h-1.5 w-1.5 rounded-full bg-current" />
+                    <span key={event.id} className={clsx("rounded-full bg-current", view === "month" ? "h-1 w-1" : "h-1.5 w-1.5")} />
                   ))}
                 </span>
               ) : null}
