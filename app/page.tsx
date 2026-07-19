@@ -240,6 +240,10 @@ type ShareTarget =
   | { type: "connections" }
   | { type: "group"; groupId: string };
 
+function groupRoleLabel(role: Group["role"]) {
+  return role === "owner" ? "Admin" : "Member";
+}
+
 function normalizeUsername(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 24);
 }
@@ -2427,7 +2431,7 @@ function CalendarView({
       <div className="grid gap-4">
         <EventList
           editableGroups={editableGroups.map((group) => group.id)}
-          emptyBody={editableGroups.length ? "Double-tap a calendar day to add a shared plan." : "Create or join a group as an editor before adding calendar plans."}
+          emptyBody={editableGroups.length ? "Double-tap a calendar day to add a shared plan." : "Create or join a group as a member before adding calendar plans."}
           events={selectedDayEvents}
           onDelete={(event) => void deleteEvent(event)}
           onEdit={(event) => {
@@ -2959,7 +2963,7 @@ function NotificationCenter({
                   </p>
                 </div>
                 <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">
-                  {invite.inviterName} invited you as {invite.role}.
+                  {invite.inviterName} invited you as {groupRoleLabel(invite.role)}.
                 </p>
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <button
@@ -3585,7 +3589,7 @@ function GroupPanel({
   async function leaveGroup(group: Group) {
     if (!supabase) return;
     if (group.role === "owner") {
-      setMessage("Owners cannot leave their own group. Delete the group instead.");
+      setMessage("Admins cannot leave their own group. Delete the group instead.");
       return;
     }
 
@@ -4080,8 +4084,8 @@ function GroupMembersSheet({
                   <p className="truncate font-semibold">{member.username}</p>
                   <p className="truncate text-sm text-ink/55 dark:text-paper/55">{member.displayName}</p>
                 </div>
-                <span className="rounded-full border border-line px-2.5 py-1 text-xs capitalize text-ink/60 dark:border-white/15 dark:text-paper/60">
-                  {member.role}
+                <span className="rounded-full border border-line px-2.5 py-1 text-xs text-ink/60 dark:border-white/15 dark:text-paper/60">
+                  {groupRoleLabel(member.role)}
                 </span>
               </button>
             ))}
@@ -4613,7 +4617,7 @@ function EventForm({
           disabled={!canEdit}
           className="rounded-full bg-ink px-4 py-3 font-medium text-paper shadow-sm disabled:opacity-45 dark:bg-paper dark:text-ink"
         >
-          {canEdit ? (editingEvent ? "Update event" : "Save event") : "Viewer access"}
+          {canEdit ? (editingEvent ? "Update event" : "Save event") : "Member access required"}
         </button>
         {editingEvent ? (
           <button

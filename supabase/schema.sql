@@ -423,7 +423,7 @@ begin
   end if;
 
   if target_group.owner_id = auth.uid() then
-    raise exception 'Owners cannot leave their own group. Delete the group instead.';
+    raise exception 'Admins cannot leave their own group. Delete the group instead.';
   end if;
 
   if not public.is_group_member(target_group_id, auth.uid()) then
