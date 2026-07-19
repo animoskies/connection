@@ -2183,10 +2183,14 @@ function ProfileView({
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="rounded-lg border border-white/70 bg-white/85 p-5 text-center shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
-        <Avatar name={profile.display_name} src={profile.avatar_url ?? ""} size="lg" className="mx-auto" />
-        <h1 className="mt-3 text-2xl font-semibold">{profile.display_name}</h1>
-        <p className="text-sm text-ink/55 dark:text-paper/55">{profile.username}</p>
+      <div className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
+        <div className="flex items-center gap-4">
+          <Avatar name={profile.display_name} src={profile.avatar_url ?? ""} size="lg" />
+          <div className="min-w-0">
+            <h1 className="truncate text-2xl font-semibold">{profile.display_name}</h1>
+            <p className="truncate text-sm text-ink/55 dark:text-paper/55">{profile.username}</p>
+          </div>
+        </div>
         <div className="mt-4 grid grid-cols-3 divide-x divide-line rounded-lg border border-line bg-paper/70 text-center dark:divide-white/15 dark:border-white/15 dark:bg-[#1d1d1a]">
           <button className="px-2 py-3" onClick={() => setShowConnections(false)} type="button">
             <span className="block text-lg font-semibold">{ownPhotos.length}</span>
