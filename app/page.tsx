@@ -2440,7 +2440,10 @@ function CalendarView({
         />
       </div>
       {eventModalOpen && formGroup ? (
-        <div className="fixed inset-0 z-40 flex items-end bg-black/45 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-ink sm:items-center">
+        <div
+          className="fixed inset-0 z-40 flex items-start justify-center bg-black/45 px-3 pt-[calc(5.75rem+env(safe-area-inset-top))] text-ink backdrop-blur-sm dark:bg-black/55"
+          onClick={closeEventModal}
+        >
           <EventForm
             editingEvent={editingEvent}
             group={formGroup}
@@ -4274,7 +4277,7 @@ function CalendarSurface({
           <CalendarDays size={16} />
           <span>{selected.toFormat("LLLL")}</span>
           <span className="text-ink/35 dark:text-paper/35">/</span>
-          <span>{timezone}</span>
+          <span>let&apos;s make it count</span>
         </div>
         <button
           aria-label="Return to today"
@@ -4573,7 +4576,10 @@ function EventForm({
   const canEdit = group.role === "owner" || group.role === "editor";
 
   return (
-    <section className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-white/70 bg-white p-4 text-ink shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420] dark:text-paper sm:rounded-2xl">
+    <section
+      className="max-h-[calc(100dvh-7rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/70 bg-white p-4 text-ink shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420] dark:text-paper"
+      onClick={(event) => event.stopPropagation()}
+    >
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           {editingEvent ? <Pencil size={18} /> : <Plus size={18} />}
