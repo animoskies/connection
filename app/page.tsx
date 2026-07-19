@@ -3881,7 +3881,7 @@ function GroupGallery({
 
   return (
     <section className="flex flex-col gap-7">
-      <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_8rem] items-start">
+      <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_5.5rem] items-start">
         <button aria-label="Back to groups" className="grid h-10 w-10 place-items-center" onClick={() => setActiveGroupId(null)}>
           <ArrowLeft size={23} />
         </button>
@@ -3912,14 +3912,6 @@ function GroupGallery({
           >
             <Users size={20} />
           </button>
-          <button
-            aria-label={`Invite to ${group.name}`}
-            className="grid h-10 w-10 place-items-center"
-            onClick={() => setInviteOpen((value) => !value)}
-            type="button"
-          >
-            <Plus size={22} />
-          </button>
         </div>
       </div>
 
@@ -3928,6 +3920,10 @@ function GroupGallery({
           group={group}
           members={members}
           onClose={() => setMembersOpen(false)}
+          onInvite={() => {
+            setMembersOpen(false);
+            setInviteOpen(true);
+          }}
           onOpenProfile={(member) => {
             setMembersOpen(false);
             onOpenProfile(member.id, member.displayName);
@@ -3977,11 +3973,13 @@ function GroupMembersSheet({
   group,
   members,
   onClose,
+  onInvite,
   onOpenProfile
 }: {
   group: Group;
   members: GroupMember[];
   onClose: () => void;
+  onInvite: () => void;
   onOpenProfile: (member: GroupMember) => void;
 }) {
   return (
@@ -4000,14 +3998,24 @@ function GroupMembersSheet({
               {members.length || group.member_count} {(members.length || group.member_count) === 1 ? "member" : "members"}
             </p>
           </div>
-          <button
-            aria-label="Close members"
-            className="grid h-9 w-9 place-items-center rounded-full border border-line dark:border-white/15"
-            onClick={onClose}
-            type="button"
-          >
-            <X size={17} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              aria-label={`Invite to ${group.name}`}
+              className="grid h-9 w-9 place-items-center rounded-full border border-line dark:border-white/15"
+              onClick={onInvite}
+              type="button"
+            >
+              <Plus size={18} />
+            </button>
+            <button
+              aria-label="Close members"
+              className="grid h-9 w-9 place-items-center rounded-full border border-line dark:border-white/15"
+              onClick={onClose}
+              type="button"
+            >
+              <X size={17} />
+            </button>
+          </div>
         </div>
         {members.length ? (
           <div className="grid max-h-[55vh] gap-2 overflow-y-auto overscroll-contain">
