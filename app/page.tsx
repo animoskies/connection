@@ -7,6 +7,7 @@ import {
   CalendarDays,
   Camera,
   Check,
+  ChevronDown,
   Clock3,
   Copy,
   Download,
@@ -1758,6 +1759,12 @@ export default function Home() {
           if (tab === "groups" && activeTab === "groups") {
             setActiveGroupId(null);
           }
+          if (tab === "calendar") {
+            setCalendarGroupId("all");
+            setCalendarEventToOpenId(null);
+            setSelectedDate(DateTime.now().setZone(preferredTimezone).toISODate() ?? selectedDate);
+            setView("agenda");
+          }
           setActiveTab(tab);
         }}
       />
@@ -1772,6 +1779,16 @@ export default function Home() {
           canDelete={Boolean(profile && selectedPhoto.ownerId === profile.id)}
           onOpenOwner={openPhotoOwner}
           onDelete={deletePhoto}
+          onExitContext={() => {
+            setSelectedPhotoId(null);
+            if (activeTab === "connections") {
+              setSelectedConnectionId(null);
+              setSelectedConnectionProfile(null);
+            }
+            if (activeTab === "groups") {
+              setActiveGroupId(null);
+            }
+          }}
           photo={selectedPhoto}
           photos={viewerPhotos.length ? viewerPhotos : allPhotos}
           setSelectedPhotoId={setSelectedPhotoId}
@@ -1837,12 +1854,17 @@ function ConnectionsView({
   onSendRequest: (profileId: string) => void;
 }) {
   const owners = [...new Set(photos.map((photo) => photo.ownerId))];
+  const [connectionActionOpen, setConnectionActionOpen] = useState(false);
+
+  useEffect(() => {
+    setConnectionActionOpen(false);
+  }, [selectedConnection?.id]);
 
   if (selectedConnection) {
     const profilePhotos = photos.filter((photo) => photo.ownerId === selectedConnection.id);
     const actionLabel =
       selectedConnection.relationship === "connected"
-        ? "Remove"
+        ? "Connected"
         : selectedConnection.relationship === "pending_sent"
           ? "Requested"
           : selectedConnection.relationship === "pending_received"
@@ -1856,24 +1878,45 @@ function ConnectionsView({
           <button className="grid h-10 w-10 place-items-center" onClick={onBack} type="button">
             <ArrowLeft size={21} />
           </button>
-          <button
-            className={clsx(
-              "rounded-full px-3 py-1.5 text-xs font-medium",
-              selectedConnection.relationship === "none"
-                ? "bg-ink text-paper dark:bg-paper dark:text-ink"
-                : "border border-line text-ink/65 dark:border-white/15 dark:text-paper/65",
-              actionDisabled && "opacity-60"
-            )}
-            disabled={actionDisabled}
-            onClick={() =>
-              selectedConnection.relationship === "connected"
-                ? onRemoveConnection(selectedConnection.id)
-                : onSendRequest(selectedConnection.id)
-            }
-            type="button"
-          >
-            {actionLabel}
-          </button>
+          <div className="relative">
+            <button
+              className={clsx(
+                "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium",
+                selectedConnection.relationship === "none"
+                  ? "bg-ink text-paper dark:bg-paper dark:text-ink"
+                  : selectedConnection.relationship === "connected"
+                    ? "border border-[#1f73ff]/45 text-[#1f73ff]"
+                    : "border border-line text-ink/65 dark:border-white/15 dark:text-paper/65",
+                actionDisabled && "opacity-60"
+              )}
+              disabled={actionDisabled}
+              onClick={() => {
+                if (selectedConnection.relationship === "connected") {
+                  setConnectionActionOpen((value) => !value);
+                  return;
+                }
+                onSendRequest(selectedConnection.id);
+              }}
+              type="button"
+            >
+              {actionLabel}
+              {selectedConnection.relationship === "connected" ? <ChevronDown size={13} /> : null}
+            </button>
+            {selectedConnection.relationship === "connected" && connectionActionOpen ? (
+              <div className="absolute right-0 top-9 z-10 w-36 rounded-lg border border-line bg-white p-1 shadow-soft dark:border-white/15 dark:bg-[#242420]">
+                <button
+                  className="w-full rounded-md px-3 py-2 text-left text-xs font-medium text-rust transition hover:bg-paper dark:hover:bg-[#1d1d1a]"
+                  onClick={() => {
+                    setConnectionActionOpen(false);
+                    onRemoveConnection(selectedConnection.id);
+                  }}
+                  type="button"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
         <section className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
           <div className="flex items-center gap-4">
@@ -2499,6 +2542,7 @@ function PhotoViewer({
   canOpenOwner,
   onOpenOwner,
   onDelete,
+  onExitContext,
   photo,
   photos,
   setSelectedPhotoId
@@ -2507,6 +2551,7 @@ function PhotoViewer({
   canOpenOwner: boolean;
   onOpenOwner: (photo: PhotoItem) => void;
   onDelete: (photo: PhotoItem) => void;
+  onExitContext: () => void;
   photo: PhotoItem;
   photos: PhotoItem[];
   setSelectedPhotoId: (id: string | null) => void;
@@ -2524,6 +2569,10 @@ function PhotoViewer({
 
     const deltaX = x - start.x;
     const deltaY = y - start.y;
+    if (deltaY > 82 && Math.abs(deltaY) > Math.abs(deltaX) * 1.2) {
+      onExitContext();
+      return;
+    }
     if (Math.abs(deltaX) < 44 || Math.abs(deltaX) < Math.abs(deltaY) * 1.35) return;
     if (deltaX < 0 && nextPhoto) setSelectedPhotoId(nextPhoto.id);
     if (deltaX > 0 && previousPhoto) setSelectedPhotoId(previousPhoto.id);
