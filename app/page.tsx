@@ -2763,21 +2763,19 @@ function SharePhotoSheet({
           disabled={photoUploading}
         />
 
-        <label className="mb-3 flex flex-col gap-1 text-sm font-medium">
-          Destination
-          <select
-            className="rounded-full border border-line bg-white px-3 py-2 text-sm font-normal text-ink outline-none transition focus:border-moss disabled:opacity-50 dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
-            disabled={photoUploading}
-            value={selectedKey}
-            onChange={(event) => updateDestination(event.target.value)}
-          >
-            {destinationOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+        <select
+          aria-label="Photo destination"
+          className="mb-3 rounded-full border border-line bg-white px-3 py-2 text-sm text-ink outline-none transition focus:border-moss disabled:opacity-50 dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+          disabled={photoUploading}
+          value={selectedKey}
+          onChange={(event) => updateDestination(event.target.value)}
+        >
+          {destinationOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
 
         <button
           className="w-full rounded-full bg-ink px-4 py-3 font-medium text-paper transition disabled:opacity-45 dark:bg-paper dark:text-ink"
