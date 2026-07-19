@@ -4030,6 +4030,7 @@ function GroupMembersSheet({
         </div>
         {inviteOpen ? (
           <MemberPanel
+            existingMemberIds={members.map((member) => member.id)}
             group={group}
             notifyGroupMembers={notifyGroupMembers}
             onDone={() => setInviteOpen(false)}
@@ -4067,6 +4068,7 @@ function GroupMembersSheet({
 }
 
 function MemberPanel({
+  existingMemberIds = [],
   group,
   notifyGroupMembers,
   onDone,
@@ -4074,6 +4076,7 @@ function MemberPanel({
   reload,
   setMessage
 }: {
+  existingMemberIds?: string[];
   group: Group;
   notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   onDone?: () => void;
@@ -4081,12 +4084,13 @@ function MemberPanel({
   reload: WorkspaceReload;
   setMessage: (value: string) => void;
 }) {
-  const [invitee, setInvitee] = useState<ConnectionProfile | null>(null);
+  const [invitees, setInvitees] = useState<ConnectionProfile[]>([]);
   const [busyLink, setBusyLink] = useState(false);
+  const excludedInviteIds = [profile.id, ...existingMemberIds, ...invitees.map((invitee) => invitee.id)];
 
   async function inviteMember(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !invitee) return;
+    if (!supabase || !invitees.length) return;
     setMessage("");
 
     const {
@@ -4098,26 +4102,27 @@ function MemberPanel({
       return;
     }
 
-    const token = crypto.randomUUID().replaceAll("-", "");
-    const { error } = await supabase
-      .from("group_invites")
-      .insert({
-        group_id: group.id,
-        token,
-        role: "editor",
-        created_by: user.id,
-        invitee_id: invitee.id
-      });
+    const invites = invitees.map((invitee) => ({
+      group_id: group.id,
+      token: crypto.randomUUID().replaceAll("-", ""),
+      role: "editor",
+      created_by: user.id,
+      invitee_id: invitee.id
+    }));
+
+    const { error } = await supabase.from("group_invites").insert(invites);
 
     if (error) {
       setMessage(`Failed to send invite. ${error.message}`);
       return;
     }
 
-    await notifyGroupMembers(group.id, `${profile.display_name} invited ${invitee.username} to ${group.name}.`);
-    setMessage(`Invite sent to ${invitee.username}.`);
-    setInvitee(null);
+    const usernames = invitees.map((invitee) => invitee.username).join(", ");
+    await notifyGroupMembers(group.id, `${profile.display_name} invited ${usernames} to ${group.name}.`);
+    setMessage(invitees.length === 1 ? `Invite sent to ${invitees[0].username}.` : `Invites sent to ${invitees.length} people.`);
+    setInvitees([]);
     await reload();
+    onDone?.();
   }
 
   async function copyInviteLink() {
@@ -4164,27 +4169,16 @@ function MemberPanel({
       </div>
       <form className="flex gap-2" onSubmit={inviteMember}>
         <div className="min-w-0 flex-1">
-          {invitee ? (
-            <button
-              className="flex w-full items-center justify-between rounded-full border border-line bg-white px-3 py-2 text-sm dark:border-white/15 dark:bg-[#1d1d1a]"
-              onClick={() => setInvitee(null)}
-              type="button"
-            >
-              {invitee.username}
-              <X size={14} />
-            </button>
-          ) : (
-            <UsernameSearchPicker
-              excludeIds={[profile.id]}
-              onSelect={setInvitee}
-              placeholder="Search"
-              setMessage={setMessage}
-            />
-          )}
+          <UsernameSearchPicker
+            excludeIds={excludedInviteIds}
+            onSelect={(invitee) => setInvitees((current) => [...current, invitee])}
+            placeholder="Search"
+            setMessage={setMessage}
+          />
         </div>
         <button
           aria-label="Invite member"
-          disabled={group.role !== "owner" || !invitee}
+          disabled={group.role !== "owner" || !invitees.length}
           className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-rust text-ink disabled:opacity-40"
         >
           <Send size={16} />
@@ -4199,6 +4193,20 @@ function MemberPanel({
           <Copy size={16} />
         </button>
       </form>
+      {invitees.length ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {invitees.map((invitee) => (
+            <button
+              key={invitee.id}
+              className="rounded-full border border-line px-3 py-1 text-sm dark:border-white/15"
+              onClick={() => setInvitees((current) => current.filter((item) => item.id !== invitee.id))}
+              type="button"
+            >
+              {invitee.username} <X className="inline" size={13} />
+            </button>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
