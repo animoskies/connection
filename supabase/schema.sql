@@ -265,6 +265,8 @@ as $$
 declare
   invite public.group_invites;
   joined_group public.groups;
+  accepted_count integer := 0;
+  accepting_name text;
 begin
   if auth.uid() is null then
     raise exception 'Authentication required';
@@ -289,6 +291,25 @@ begin
     values (joined_group.id, auth.uid(), 'editor')
     on conflict (group_id, user_id) do nothing;
 
+    get diagnostics accepted_count = row_count;
+
+    if accepted_count > 0 then
+      select coalesce(display_name, username) into accepting_name
+      from public.profiles
+      where id = auth.uid();
+
+      insert into public.group_notifications (group_id, user_id, actor_id, message, metadata)
+      select
+        joined_group.id,
+        gm.user_id,
+        auth.uid(),
+        coalesce(accepting_name, 'Someone') || ' joined ' || joined_group.name || '.',
+        jsonb_build_object('type', 'group_member', 'action', 'joined', 'groupId', joined_group.id)
+      from public.group_members gm
+      where gm.group_id = joined_group.id
+        and gm.user_id <> auth.uid();
+    end if;
+
     return joined_group;
   end if;
 
@@ -308,6 +329,8 @@ begin
   values (invite.group_id, auth.uid(), invite.role)
   on conflict (group_id, user_id) do nothing;
 
+  get diagnostics accepted_count = row_count;
+
   update public.group_invites
   set accepted_at = now()
   where id = invite.id;
@@ -316,7 +339,74 @@ begin
   from public.groups
   where id = invite.group_id;
 
+  if accepted_count > 0 then
+    select coalesce(display_name, username) into accepting_name
+    from public.profiles
+    where id = auth.uid();
+
+    insert into public.group_notifications (group_id, user_id, actor_id, message, metadata)
+    select
+      joined_group.id,
+      gm.user_id,
+      auth.uid(),
+      coalesce(accepting_name, 'Someone') || ' joined ' || joined_group.name || '.',
+      jsonb_build_object('type', 'group_member', 'action', 'joined', 'groupId', joined_group.id)
+    from public.group_members gm
+    where gm.group_id = joined_group.id
+      and gm.user_id <> auth.uid();
+  end if;
+
   return joined_group;
+end;
+$$;
+
+create or replace function public.leave_group(target_group_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_group public.groups;
+  leaving_name text;
+begin
+  if auth.uid() is null then
+    raise exception 'Authentication required';
+  end if;
+
+  select * into target_group
+  from public.groups
+  where id = target_group_id;
+
+  if target_group.id is null then
+    raise exception 'Group not found';
+  end if;
+
+  if target_group.owner_id = auth.uid() then
+    raise exception 'Owners cannot leave their own group. Delete the group instead.';
+  end if;
+
+  if not public.is_group_member(target_group_id, auth.uid()) then
+    raise exception 'You are not a member of this group';
+  end if;
+
+  select coalesce(display_name, username) into leaving_name
+  from public.profiles
+  where id = auth.uid();
+
+  delete from public.group_members
+  where group_id = target_group_id
+    and user_id = auth.uid();
+
+  insert into public.group_notifications (group_id, user_id, actor_id, message, metadata)
+  select
+    target_group_id,
+    gm.user_id,
+    auth.uid(),
+    coalesce(leaving_name, 'Someone') || ' left ' || target_group.name || '.',
+    jsonb_build_object('type', 'group_member', 'action', 'left', 'groupId', target_group_id)
+  from public.group_members gm
+  where gm.group_id = target_group_id;
 end;
 $$;
 

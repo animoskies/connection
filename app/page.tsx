@@ -264,6 +264,7 @@ function isTransientMessage(message: string) {
     "Group saved successfully. Invites sent.",
     "Group updated successfully.",
     "Group deleted successfully.",
+    "Left group.",
     "Calendar event added successfully.",
     "Calendar event updated successfully.",
     "Calendar event deleted successfully.",
@@ -896,6 +897,9 @@ export default function Home() {
     setGroups(loadedGroups);
     setActiveGroupId((currentGroupId) =>
       currentGroupId && loadedGroups.some((group) => group.id === currentGroupId) ? currentGroupId : null
+    );
+    setCalendarGroupId((currentGroupId) =>
+      currentGroupId === "all" || loadedGroups.some((group) => group.id === currentGroupId) ? currentGroupId : "all"
     );
 
     if (loadedGroups.length) {
@@ -3587,6 +3591,33 @@ function GroupPanel({
     setMessage("Group deleted successfully.");
   }
 
+  async function leaveGroup(group: Group) {
+    if (!supabase) return;
+    if (group.role === "owner") {
+      setMessage("Owners cannot leave their own group. Delete the group instead.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Leave ${group.name}? You will no longer see its photos or calendar.`);
+    if (!confirmed) return;
+    setMessage("");
+
+    const { error } = await supabase.rpc("leave_group", {
+      target_group_id: group.id
+    });
+
+    if (error) {
+      setMessage(`Failed to leave group. ${error.message}`);
+      return;
+    }
+
+    if (activeGroupId === group.id) setActiveGroupId(null);
+    setActionGroupId(null);
+    setInviteGroupId(null);
+    await reload();
+    setMessage("Left group.");
+  }
+
   return (
     <section>
       <div className="mb-5 flex items-center justify-end">
@@ -3725,7 +3756,7 @@ function GroupPanel({
                 </div>
               )}
               {actionGroupId === group.id ? (
-                <div className="mt-3 grid grid-cols-3 gap-2 border-t border-line pt-3 dark:border-white/15">
+                <div className="mt-3 grid grid-cols-2 gap-2 border-t border-line pt-3 sm:grid-cols-4 dark:border-white/15">
                   <button
                     className="flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-sm disabled:opacity-40 dark:border-white/15"
                     disabled={group.role !== "owner"}
@@ -3753,6 +3784,14 @@ function GroupPanel({
                   >
                     <UserPlus size={15} />
                     Invite
+                  </button>
+                  <button
+                    className="flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-sm dark:border-white/15"
+                    onClick={() => void leaveGroup(group)}
+                    type="button"
+                  >
+                    <LogOut size={15} />
+                    Leave
                   </button>
                 </div>
               ) : null}
