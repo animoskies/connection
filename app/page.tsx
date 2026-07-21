@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  Settings,
   Shield,
   Sun,
   Trash2,
@@ -546,6 +547,41 @@ function groupNotificationSummary(notification: GroupNotification, timezone: str
   }
 
   return typeof notification.metadata.summary === "string" ? notification.metadata.summary : null;
+}
+
+function calendarNotificationStyle(notification: GroupNotification) {
+  if (notification.metadata.type !== "calendar_event") {
+    return {
+      card: "",
+      summary: "bg-white text-ink/55 dark:bg-[#242420] dark:text-paper/55"
+    };
+  }
+
+  if (notification.metadata.action === "deleted") {
+    return {
+      card: "border-red-500/35 bg-red-500/[0.07] dark:border-red-300/25 dark:bg-red-400/[0.08]",
+      summary: "bg-red-500/[0.10] text-red-800 dark:bg-red-300/[0.10] dark:text-red-200"
+    };
+  }
+
+  if (notification.metadata.action === "updated") {
+    return {
+      card: "border-sky-500/35 bg-sky-500/[0.07] dark:border-sky-300/25 dark:bg-sky-400/[0.08]",
+      summary: "bg-sky-500/[0.10] text-sky-800 dark:bg-sky-300/[0.10] dark:text-sky-200"
+    };
+  }
+
+  if (notification.metadata.action === "added") {
+    return {
+      card: "border-moss/50 bg-moss/[0.08] dark:border-moss/35 dark:bg-moss/[0.12]",
+      summary: "bg-moss/[0.12] text-ink dark:bg-moss/[0.18] dark:text-paper"
+    };
+  }
+
+  return {
+    card: "",
+    summary: "bg-white text-ink/55 dark:bg-[#242420] dark:text-paper/55"
+  };
 }
 
 function photoDate(photo: PhotoItem) {
@@ -1278,6 +1314,36 @@ export default function Home() {
     );
   }
 
+  async function clearUnreadNotifications() {
+    if (!supabase) return;
+    const unreadGroups = groupNotifications.filter((notification) => !notification.readAt);
+    const unreadConnections = connectionNotifications.filter((notification) => !notification.readAt);
+    if (!unreadGroups.length && !unreadConnections.length) return;
+
+    setMessage("");
+    const results = await Promise.all([
+      ...unreadGroups.map((notification) =>
+        supabase.rpc("mark_group_notification_read", {
+          notification_id: notification.id
+        })
+      ),
+      ...unreadConnections.map((notification) =>
+        supabase.rpc("mark_connection_notification_read", {
+          notification_id: notification.id
+        })
+      )
+    ]);
+    const failed = results.find((result) => result.error);
+    if (failed?.error) {
+      setMessage(`Failed to clear notifications. ${failed.error.message}`);
+      return;
+    }
+
+    const readAt = new Date().toISOString();
+    setGroupNotifications((current) => current.map((notification) => ({ ...notification, readAt: notification.readAt ?? readAt })));
+    setConnectionNotifications((current) => current.map((notification) => ({ ...notification, readAt: notification.readAt ?? readAt })));
+  }
+
   async function openConnectionNotification(notification: ConnectionNotification) {
     if (!notification.readAt) {
       await markConnectionNotificationRead(notification.id);
@@ -1906,33 +1972,25 @@ export default function Home() {
                 onAcceptGroup={(token) => void acceptInvite(token)}
                 onDeclineConnection={(requesterId) => void declineConnectionRequest(requesterId)}
                 onDeclineGroup={(token) => void declineInvite(token)}
+                onClearAll={() => void clearUnreadNotifications()}
                 onOpenConnectionNotification={(notification) => void openConnectionNotification(notification)}
                 onOpenGroupNotification={(notification) => void openGroupNotification(notification)}
                 timezone={profile.preferred_timezone}
               />
             ) : null}
-            <button
-              aria-label="Account settings"
-              className="grid h-9 w-9 place-items-center rounded-full transition hover:-translate-y-0.5"
-              onClick={() => {
-                setNotificationsOpen(false);
-                setAccountOpen((value) => !value);
-              }}
-            >
-              <Avatar name={profile.display_name} src={profile.avatar_url ?? ""} size="sm" className="h-9 w-9" />
-            </button>
-            {accountOpen ? (
-              <AccountMenu
-                darkMode={darkMode}
-                onClose={() => setAccountOpen(false)}
-                profile={profile}
-                reload={() => loadWorkspace()}
-                setDarkMode={setDarkMode}
-                setMessage={setMessage}
-              />
-            ) : null}
           </div>
         </header>
+
+        {accountOpen ? (
+          <AccountMenu
+            darkMode={darkMode}
+            onClose={() => setAccountOpen(false)}
+            profile={profile}
+            reload={() => loadWorkspace()}
+            setDarkMode={setDarkMode}
+            setMessage={setMessage}
+          />
+        ) : null}
 
         {activeTab === "connections" && headerSearchOpen && !selectedConnectionId ? (
           <ConnectionSearchModal
@@ -2045,6 +2103,10 @@ export default function Home() {
               setActiveTab("connections");
             }}
             onOpenGroups={() => setActiveTab("groups")}
+            onOpenSettings={() => {
+              setNotificationsOpen(false);
+              setAccountOpen(true);
+            }}
           />
         ) : null}
       </div>
@@ -2485,7 +2547,8 @@ function ProfileView({
   photos,
   profile,
   onOpenConnection,
-  onOpenGroups
+  onOpenGroups,
+  onOpenSettings
 }: {
   connections: ConnectionProfile[];
   groups: Group[];
@@ -2494,6 +2557,7 @@ function ProfileView({
   profile: Profile;
   onOpenConnection: (profileId: string) => void;
   onOpenGroups: () => void;
+  onOpenSettings: () => void;
 }) {
   const ownPhotos = photos.filter((photo) => photo.ownerId === profile.id);
   const [showConnections, setShowConnections] = useState(false);
@@ -2508,7 +2572,7 @@ function ProfileView({
             <p className="truncate text-sm text-ink/55 dark:text-paper/55">{profile.username}</p>
           </div>
         </div>
-        <div className="mt-4 grid grid-cols-3 divide-x divide-line rounded-lg border border-line bg-paper/70 text-center dark:divide-white/15 dark:border-white/15 dark:bg-[#1d1d1a]">
+        <div className="mt-4 grid grid-cols-4 divide-x divide-line rounded-lg border border-line bg-paper/70 text-center dark:divide-white/15 dark:border-white/15 dark:bg-[#1d1d1a]">
           <button className="px-2 py-3" onClick={() => setShowConnections(false)} type="button">
             <span className="block text-lg font-semibold">{ownPhotos.length}</span>
             <span className="text-xs text-ink/55 dark:text-paper/55">Photos</span>
@@ -2520,6 +2584,10 @@ function ProfileView({
           <button className="px-2 py-3" onClick={onOpenGroups} type="button">
             <span className="block text-lg font-semibold">{groups.length}</span>
             <span className="text-xs text-ink/55 dark:text-paper/55">Groups</span>
+          </button>
+          <button className="grid place-items-center px-2 py-3" onClick={onOpenSettings} type="button">
+            <Settings size={20} />
+            <span className="mt-1 text-xs text-ink/55 dark:text-paper/55">Settings</span>
           </button>
         </div>
       </div>
@@ -3171,6 +3239,7 @@ function NotificationCenter({
   onAcceptGroup,
   onDeclineConnection,
   onDeclineGroup,
+  onClearAll,
   onOpenConnectionNotification,
   onOpenGroupNotification,
   timezone
@@ -3183,12 +3252,14 @@ function NotificationCenter({
   onAcceptGroup: (token: string) => void;
   onDeclineConnection: (requesterId: string) => void;
   onDeclineGroup: (token: string) => void;
+  onClearAll: () => void;
   onOpenConnectionNotification: (notification: ConnectionNotification) => void;
   onOpenGroupNotification: (notification: GroupNotification) => void;
   timezone: string;
 }) {
   const unreadGroupNotifications = groupNotifications.filter((notification) => !notification.readAt);
   const unreadConnectionNotifications = connectionNotifications.filter((notification) => !notification.readAt);
+  const unreadNotificationCount = unreadGroupNotifications.length + unreadConnectionNotifications.length;
   const total = invites.length + connectionRequests.length + unreadGroupNotifications.length + unreadConnectionNotifications.length;
   const hasHistory = Boolean(groupNotifications.length || connectionNotifications.length);
   const notificationItems = [
@@ -3222,7 +3293,23 @@ function NotificationCenter({
     <section className="fixed inset-x-3 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] top-[5.25rem] z-20 flex flex-col rounded-lg border border-line bg-white p-4 text-left shadow-soft dark:border-white/15 dark:bg-[#242420] sm:absolute sm:inset-x-auto sm:bottom-auto sm:right-0 sm:top-12 sm:w-[min(23rem,calc(100vw-2rem))] sm:max-h-[min(34rem,calc(100dvh-7rem))]">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="font-semibold">Notifications</h2>
-        {total ? <span className="text-xs text-ink/55 dark:text-paper/55">{total} pending</span> : null}
+        {total ? (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-ink/55 dark:text-paper/55">{total} pending</span>
+            {unreadNotificationCount ? (
+              <button
+                className="rounded-full border border-line px-2 py-1 text-[0.65rem] font-medium text-ink/55 transition hover:text-ink dark:border-white/15 dark:text-paper/55 dark:hover:text-paper"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onClearAll();
+                }}
+                type="button"
+              >
+                Clear all
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       {total || hasHistory ? (
         <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto pr-1 sm:max-h-[min(32rem,calc(100dvh-9rem))]">
@@ -3230,6 +3317,7 @@ function NotificationCenter({
             if (item.kind === "group") {
               const { notification } = item;
               const summary = groupNotificationSummary(notification, timezone);
+              const actionStyle = calendarNotificationStyle(notification);
               return (
                 <button
                   key={item.id}
@@ -3237,7 +3325,8 @@ function NotificationCenter({
                     "rounded-lg border p-3 text-left transition hover:border-ink/25 hover:bg-white dark:border-white/15 dark:hover:border-paper/25 dark:hover:bg-[#242420]",
                     notification.readAt
                       ? "border-line bg-white dark:bg-[#1d1d1a]"
-                      : "border-moss/40 bg-skysoft/55 dark:bg-[#202923]"
+                      : "border-moss/40 bg-skysoft/55 dark:bg-[#202923]",
+                    actionStyle.card
                   )}
                   onClick={() => onOpenGroupNotification(notification)}
                   type="button"
@@ -3245,14 +3334,14 @@ function NotificationCenter({
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">{notification.groupName}</p>
-                      <p className="mt-0.5 text-[0.68rem] uppercase tracking-[0.14em] text-ink/35 dark:text-paper/35">
-                        {notificationTime(notification.createdAt)}
-                      </p>
                     </div>
+                    <p className="shrink-0 pt-0.5 text-[0.58rem] uppercase tracking-[0.12em] text-ink/35 dark:text-paper/35">
+                      {notificationTime(notification.createdAt)}
+                    </p>
                   </div>
                   <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">{notification.message}</p>
                   {summary ? (
-                    <p className="mt-2 rounded-md bg-white px-2 py-1.5 text-xs leading-5 text-ink/55 dark:bg-[#242420] dark:text-paper/55">
+                    <p className={clsx("mt-2 rounded-md px-2 py-1.5 text-xs leading-5", actionStyle.summary)}>
                       {summary}
                     </p>
                   ) : null}
