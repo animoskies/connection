@@ -172,11 +172,27 @@ create table if not exists public.events (
   title text not null,
   description text,
   location text,
+  reference text,
+  location_lat double precision,
+  location_lon double precision,
+  location_place_id text,
   starts_at_utc timestamptz not null,
   source_timezone text not null,
   creator_id uuid not null references public.profiles(id) on delete cascade,
   created_at timestamptz not null default now()
 );
+
+alter table public.events
+  add column if not exists reference text,
+  add column if not exists location_lat double precision,
+  add column if not exists location_lon double precision,
+  add column if not exists location_place_id text,
+  add column if not exists weather_status text check (weather_status in ('sunny', 'rain')),
+  add column if not exists weather_emoji text,
+  add column if not exists weather_checked_at timestamptz,
+  add column if not exists weather_next_check_at timestamptz,
+  add column if not exists weather_rain_probability integer,
+  add column if not exists weather_source text;
 
 create table if not exists public.photos (
   id uuid primary key default gen_random_uuid(),

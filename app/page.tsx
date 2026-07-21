@@ -13,6 +13,7 @@ import {
   Download,
   Image as ImageIcon,
   Info,
+  Link2,
   LogOut,
   MoreHorizontal,
   Moon,
@@ -69,10 +70,20 @@ type EventItem = {
   title: string;
   description: string | null;
   location: string | null;
+  reference?: string | null;
+  location_lat?: number | null;
+  location_lon?: number | null;
+  location_place_id?: string | null;
   starts_at_utc: string;
   source_timezone: string;
   creator_id: string;
   created_at: string;
+  weather_status?: "sunny" | "rain" | null;
+  weather_emoji?: string | null;
+  weather_checked_at?: string | null;
+  weather_next_check_at?: string | null;
+  weather_rain_probability?: number | null;
+  weather_source?: string | null;
 };
 
 type ViewMode = "agenda" | "week" | "month";
@@ -94,6 +105,38 @@ type PhotoItem = {
   takenAt: string;
   createdAt: string;
   tags: string[];
+};
+
+type WorkspaceSnapshot = {
+  connectionNotifications: ConnectionNotification[];
+  connectionRequests: ConnectionRequest[];
+  connections: ConnectionProfile[];
+  events: EventItem[];
+  groupInvites: GroupInvite[];
+  groupMembers: Record<string, GroupMember[]>;
+  groupNotifications: GroupNotification[];
+  groups: Group[];
+  photos: PhotoItem[];
+  profile: Profile;
+  savedAt: string;
+  version: number;
+};
+
+type EventWeather = {
+  checkedAt: string;
+  emoji: string;
+  nextCheckAt: string | null;
+  rainProbability: number;
+  source: string;
+  status: "sunny" | "rain";
+};
+
+type LocationSuggestion = {
+  id: string;
+  displayName: string;
+  latitude: number;
+  longitude: number;
+  type: string;
 };
 
 type GroupInvite = {
@@ -220,6 +263,8 @@ const nativePhotoMaxSize = 1280;
 const nativePhotoQuality = 0.72;
 const avatarPhotoSize = 320;
 const specialLovePhotoId = "4ebe631a-e43a-4eef-a3da-73f328df44eb";
+const workspaceCachePrefix = "connection-workspace-cache";
+const workspaceCacheVersion = 1;
 const loveHeartParticles = [
   { left: 8, delay: 0.05, duration: 2.8, size: 1.25 },
   { left: 14, delay: 0.45, duration: 3.1, size: 1.7 },
@@ -239,6 +284,71 @@ type WorkspaceReload = () => void | Promise<void>;
 type ShareTarget =
   | { type: "connections" }
   | { type: "group"; groupId: string };
+
+function workspaceCacheKey(userId: string) {
+  return `${workspaceCachePrefix}:${workspaceCacheVersion}:${userId}`;
+}
+
+async function fetchEventWeather({
+  fallbackTimezone,
+  latitude,
+  location,
+  longitude,
+  startsAtUtc
+}: {
+  fallbackTimezone?: string | null;
+  latitude?: number | null;
+  location?: string | null;
+  longitude?: number | null;
+  startsAtUtc: string | null;
+}) {
+  if (!startsAtUtc) return null;
+  try {
+    const response = await fetch("/api/weather", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ fallbackTimezone, latitude, location, longitude, startsAtUtc })
+    });
+    const payload = (await response.json()) as { weather?: EventWeather | null };
+    return response.ok ? (payload.weather ?? null) : null;
+  } catch {
+    return null;
+  }
+}
+
+function getBrowserLocation() {
+  return new Promise<{ latitude: number; longitude: number } | null>((resolve) => {
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) =>
+        resolve({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude
+        }),
+      () => resolve(null),
+      {
+        enableHighAccuracy: false,
+        maximumAge: 60 * 60 * 1000,
+        timeout: 2500
+      }
+    );
+  });
+}
+
+function weatherColumns(weather: EventWeather) {
+  return {
+    weather_checked_at: weather.checkedAt,
+    weather_emoji: weather.emoji,
+    weather_next_check_at: weather.nextCheckAt,
+    weather_rain_probability: weather.rainProbability,
+    weather_source: weather.source,
+    weather_status: weather.status
+  };
+}
 
 function groupRoleLabel(role: Group["role"]) {
   return role === "owner" ? "Admin" : "Member";
@@ -343,6 +453,12 @@ function appUrl(path = "/") {
   return `${base}${normalizedPath}`;
 }
 
+function referenceHref(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "#";
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 function icsEscape(value = "") {
   return value.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
 }
@@ -366,8 +482,11 @@ function downloadEventIcs(event: EventItem) {
     `DTSTART:${icsDate(event.starts_at_utc)}`,
     `DTEND:${end.toFormat("yyyyLLdd'T'HHmmss'Z'")}`,
     `SUMMARY:${icsEscape(event.title)}`,
-    event.description ? `DESCRIPTION:${icsEscape(event.description)}` : "",
+    event.description || event.reference
+      ? `DESCRIPTION:${icsEscape([event.description, event.reference ? `Reference: ${event.reference}` : ""].filter(Boolean).join("\n\n"))}`
+      : "",
     event.location ? `LOCATION:${icsEscape(event.location)}` : "",
+    event.reference ? `URL:${icsEscape(referenceHref(event.reference))}` : "",
     "END:VEVENT",
     "END:VCALENDAR"
   ].filter(Boolean).join("\r\n");
@@ -390,7 +509,7 @@ function openGoogleCalendar(event: EventItem) {
     action: "TEMPLATE",
     text: event.title,
     dates: `${start.toFormat("yyyyLLdd'T'HHmmss'Z'")}/${end.toFormat("yyyyLLdd'T'HHmmss'Z'")}`,
-    details: event.description ?? "",
+    details: [event.description, event.reference ? `Reference: ${event.reference}` : ""].filter(Boolean).join("\n\n"),
     location: event.location ?? ""
   });
   window.open(`https://calendar.google.com/calendar/render?${params.toString()}`, "_blank", "noopener,noreferrer");
@@ -411,6 +530,22 @@ function notificationTime(value: string) {
   if (now.diff(date, "minutes").minutes < 1) return "Just now";
   if (now.diff(date, "days").days < 1) return date.toRelative({ base: now }) ?? date.toFormat("h:mm a");
   return date.toFormat("LLL d, h:mm a");
+}
+
+function groupNotificationSummary(notification: GroupNotification, timezone: string) {
+  if (
+    notification.metadata.type === "calendar_event" &&
+    notification.metadata.action === "added" &&
+    typeof notification.metadata.eventTitle === "string" &&
+    typeof notification.metadata.startsAtUtc === "string"
+  ) {
+    const localTime = DateTime.fromISO(notification.metadata.startsAtUtc, { zone: "utc" }).setZone(timezone);
+    if (localTime.isValid) {
+      return `${notification.metadata.eventTitle} • Scheduled for ${localTime.toFormat("LLL d, h:mm a")}`;
+    }
+  }
+
+  return typeof notification.metadata.summary === "string" ? notification.metadata.summary : null;
 }
 
 function photoDate(photo: PhotoItem) {
@@ -452,6 +587,7 @@ function eventChangeSummary(previousEvent: EventItem | null, nextEvent: {
   title: string;
   description: string | null;
   location: string | null;
+  reference: string | null;
   starts_at_utc: string | null;
   source_timezone: string;
 }) {
@@ -464,6 +600,10 @@ function eventChangeSummary(previousEvent: EventItem | null, nextEvent: {
 
   if ((previousEvent.location ?? "") !== (nextEvent.location ?? "")) {
     changes.push(`Location: ${previousEvent.location || "None"} -> ${nextEvent.location || "None"}`);
+  }
+
+  if ((previousEvent.reference ?? "") !== (nextEvent.reference ?? "")) {
+    changes.push("Reference changed");
   }
 
   if ((previousEvent.description ?? "") !== (nextEvent.description ?? "")) {
@@ -798,6 +938,7 @@ export default function Home() {
       return;
     }
 
+    restoreWorkspaceCache(sessionUserId);
     void loadWorkspace(sessionUserId);
   }, [sessionUserId]);
 
@@ -805,6 +946,64 @@ export default function Home() {
     if (!sessionUserId || !profile) return;
     void preparePendingInvitePrompt();
   }, [sessionUserId, profile]);
+
+  useEffect(() => {
+    if (!sessionUserId || !profile) return;
+    const timeout = window.setTimeout(() => {
+      const snapshot: WorkspaceSnapshot = {
+        connectionNotifications,
+        connectionRequests,
+        connections,
+        events,
+        groupInvites,
+        groupMembers,
+        groupNotifications,
+        groups,
+        photos,
+        profile,
+        savedAt: new Date().toISOString(),
+        version: workspaceCacheVersion
+      };
+      localStorage.setItem(workspaceCacheKey(sessionUserId), JSON.stringify(snapshot));
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [
+    connectionNotifications,
+    connectionRequests,
+    connections,
+    events,
+    groupInvites,
+    groupMembers,
+    groupNotifications,
+    groups,
+    photos,
+    profile,
+    sessionUserId
+  ]);
+
+  function restoreWorkspaceCache(userId: string) {
+    try {
+      const cached = localStorage.getItem(workspaceCacheKey(userId));
+      if (!cached) return;
+      const snapshot = JSON.parse(cached) as Partial<WorkspaceSnapshot>;
+      if (snapshot.version !== workspaceCacheVersion || !snapshot.profile) return;
+
+      setProfile(snapshot.profile);
+      setGroups(snapshot.groups ?? []);
+      setGroupMembers(snapshot.groupMembers ?? {});
+      setGroupInvites(snapshot.groupInvites ?? []);
+      setGroupNotifications(snapshot.groupNotifications ?? []);
+      setConnectionRequests(snapshot.connectionRequests ?? []);
+      setConnectionNotifications(snapshot.connectionNotifications ?? []);
+      setConnections(snapshot.connections ?? []);
+      setEvents(snapshot.events ?? []);
+      setPhotos(snapshot.photos ?? []);
+      setLoading(false);
+    } catch {
+      localStorage.removeItem(workspaceCacheKey(userId));
+    }
+  }
 
   async function loadWorkspace(userId = sessionUserId, options: { clearMessage?: boolean } = {}) {
     if (!supabase || !userId) return;
@@ -918,6 +1117,7 @@ export default function Home() {
 
       if (eventError) setMessage(eventError.message);
       setEvents(eventData ?? []);
+      void refreshDueEventWeather(eventData ?? []);
     } else {
       setEvents([]);
     }
@@ -930,6 +1130,39 @@ export default function Home() {
     await loadConnectionRequests();
 
     setLoading(false);
+  }
+
+  async function refreshDueEventWeather(eventRows: EventItem[]) {
+    if (!supabase) return;
+    const now = DateTime.utc();
+    const dueEvents = eventRows
+      .filter((event) => {
+        if (!event.location && (event.location_lat === null || event.location_lat === undefined || event.location_lon === null || event.location_lon === undefined) && !event.source_timezone) return false;
+        const eventTime = DateTime.fromISO(event.starts_at_utc, { zone: "utc" });
+        if (!eventTime.isValid || eventTime <= now) return false;
+        if (!event.weather_checked_at) return true;
+        if (!event.weather_next_check_at) return false;
+        return DateTime.fromISO(event.weather_next_check_at, { zone: "utc" }) <= now;
+      })
+      .slice(0, 5);
+
+    for (const event of dueEvents) {
+      const weather = await fetchEventWeather({
+        fallbackTimezone: event.source_timezone,
+        latitude: event.location_lat,
+        location: event.location,
+        longitude: event.location_lon,
+        startsAtUtc: event.starts_at_utc
+      });
+      if (!weather) continue;
+      const columns = weatherColumns(weather);
+      const { error } = await supabase.from("events").update(columns).eq("id", event.id);
+      if (!error) {
+        setEvents((currentEvents) =>
+          currentEvents.map((item) => (item.id === event.id ? { ...item, ...columns } : item))
+        );
+      }
+    }
   }
 
   async function refreshWorkspace() {
@@ -1487,6 +1720,36 @@ export default function Home() {
     setMessage("Photo deleted successfully.");
   }
 
+  async function updatePhotoCaption(photo: PhotoItem, caption: string) {
+    const headers = await authHeaders();
+    if (!headers) return;
+
+    const response = await fetch(`/api/photos/${photo.id}`, {
+      method: "PATCH",
+      headers: {
+        ...headers,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        title: photo.title,
+        caption: caption.trim(),
+        location: photo.location,
+        tags: photo.tags
+      })
+    });
+    const payload = await response.json();
+
+    if (!response.ok) {
+      setMessage(`Failed to update caption. ${payload.error ?? "Please try again."}`);
+      return;
+    }
+
+    setPhotos((currentPhotos) =>
+      currentPhotos.map((item) => (item.id === photo.id ? { ...item, caption: caption.trim() } : item))
+    );
+    setMessage("Caption saved.");
+  }
+
   const activeGroup = groups.find((group) => group.id === activeGroupId) ?? null;
   const allPhotos = photos;
   const myPhotos = profile ? photos.filter((photo) => photo.ownerId === profile.id) : [];
@@ -1578,13 +1841,13 @@ export default function Home() {
             <span>{pullRefreshLabel}</span>
           </div>
         ) : null}
-        <header className="sticky top-0 z-20 flex items-center justify-between border-b border-ink/[0.08] py-3 dark:border-paper/[0.12]">
-          <div className="flex w-24 items-center gap-2">
+        <header className="sticky top-0 z-20 flex items-center justify-between border-b border-ink/[0.08] py-1.5 dark:border-paper/[0.12]">
+          <div className="flex w-20 items-center gap-1">
             <label
               aria-label="Open camera"
-              className="grid h-11 w-11 cursor-pointer place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
+              className="grid h-9 w-9 cursor-pointer place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
             >
-              <Plus size={30} strokeWidth={1.8} />
+              <Plus size={25} strokeWidth={1.8} />
               <input
                 accept="image/*"
                 capture="environment"
@@ -1599,7 +1862,7 @@ export default function Home() {
             {activeTab === "connections" && !selectedConnectionId ? (
               <button
                 aria-label="Search"
-                className="grid h-11 w-11 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
+                className="grid h-9 w-9 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
                 onClick={() => {
                   setAccountOpen(false);
                   setNotificationsOpen(false);
@@ -1607,15 +1870,15 @@ export default function Home() {
                 }}
                 type="button"
               >
-                <Search size={22} strokeWidth={1.8} />
+                <Search size={19} strokeWidth={1.8} />
               </button>
             ) : null}
           </div>
           <ConnectionLogo compact className="pointer-events-none absolute left-1/2 -translate-x-1/2" />
-          <div ref={notificationAreaRef} className="relative flex w-24 items-center justify-end gap-2">
+          <div ref={notificationAreaRef} className="relative flex w-20 items-center justify-end gap-1">
             <button
               aria-label="Notifications"
-              className="relative grid h-11 w-11 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
+              className="relative grid h-9 w-9 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
               onClick={() => {
                 setAccountOpen(false);
                 if (!notificationsOpen) {
@@ -1628,9 +1891,9 @@ export default function Home() {
               }}
               type="button"
             >
-              <Bell size={18} />
+              <Bell size={17} />
               {notificationCount ? (
-                <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full bg-rust" />
+                <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-rust" />
               ) : null}
             </button>
             {notificationsOpen ? (
@@ -1645,17 +1908,18 @@ export default function Home() {
                 onDeclineGroup={(token) => void declineInvite(token)}
                 onOpenConnectionNotification={(notification) => void openConnectionNotification(notification)}
                 onOpenGroupNotification={(notification) => void openGroupNotification(notification)}
+                timezone={profile.preferred_timezone}
               />
             ) : null}
             <button
               aria-label="Account settings"
-              className="grid h-11 w-11 place-items-center rounded-full transition hover:-translate-y-0.5"
+              className="grid h-9 w-9 place-items-center rounded-full transition hover:-translate-y-0.5"
               onClick={() => {
                 setNotificationsOpen(false);
                 setAccountOpen((value) => !value);
               }}
             >
-              <Avatar name={profile.display_name} src={profile.avatar_url ?? ""} size="sm" className="h-11 w-11" />
+              <Avatar name={profile.display_name} src={profile.avatar_url ?? ""} size="sm" className="h-9 w-9" />
             </button>
             {accountOpen ? (
               <AccountMenu
@@ -1813,8 +2077,10 @@ export default function Home() {
                 connections.some((connection) => connection.id === selectedPhoto.ownerId))
           )}
           canDelete={Boolean(profile && selectedPhoto.ownerId === profile.id)}
+          canEdit={Boolean(profile && selectedPhoto.ownerId === profile.id)}
           onOpenOwner={openPhotoOwner}
           onDelete={deletePhoto}
+          onEditCaption={updatePhotoCaption}
           onExitContext={() => {
             setSelectedPhotoId(null);
             if (activeTab === "connections") {
@@ -1833,6 +2099,7 @@ export default function Home() {
       {pendingCaptureSrc ? (
         <SharePhotoSheet
           groups={groups}
+          initialTarget={activeTab === "groups" && activeGroup ? { type: "group", groupId: activeGroup.id } : { type: "connections" }}
           photoUploading={photoUploading}
           src={pendingCaptureSrc}
           onCancel={() => setPendingCaptureSrc(null)}
@@ -2585,28 +2852,55 @@ function PhotoStrip({
 
 function PhotoViewer({
   canDelete,
+  canEdit,
   canOpenOwner,
   onOpenOwner,
   onDelete,
+  onEditCaption,
   onExitContext,
   photo,
   photos,
   setSelectedPhotoId
 }: {
   canDelete: boolean;
+  canEdit: boolean;
   canOpenOwner: boolean;
   onOpenOwner: (photo: PhotoItem) => void;
   onDelete: (photo: PhotoItem) => void;
+  onEditCaption: (photo: PhotoItem, caption: string) => Promise<void>;
   onExitContext: () => void;
   photo: PhotoItem;
   photos: PhotoItem[];
   setSelectedPhotoId: (id: string | null) => void;
 }) {
   const currentIndex = Math.max(0, photos.findIndex((item) => item.id === photo.id));
-  const previousPhoto = photos.length > 1 ? photos[(currentIndex - 1 + photos.length) % photos.length] : null;
-  const nextPhoto = photos.length > 1 ? photos[(currentIndex + 1) % photos.length] : null;
+  const previousPhoto = currentIndex > 0 ? photos[currentIndex - 1] : null;
+  const nextPhoto = currentIndex < photos.length - 1 ? photos[currentIndex + 1] : null;
   const showLoveBurst = photo.id === specialLovePhotoId;
+  const [captionDraft, setCaptionDraft] = useState(photo.caption);
+  const [captionEditorOpen, setCaptionEditorOpen] = useState(false);
+  const [heartBurstKey, setHeartBurstKey] = useState(0);
+  const lastHeartTapRef = useRef(0);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    setCaptionDraft(photo.caption);
+    setCaptionEditorOpen(false);
+  }, [photo.caption, photo.id]);
+
+  function triggerHeartBurst() {
+    setHeartBurstKey(Date.now());
+  }
+
+  function handlePhotoTap() {
+    const now = Date.now();
+    if (now - lastHeartTapRef.current < 320) {
+      triggerHeartBurst();
+      lastHeartTapRef.current = 0;
+      return;
+    }
+    lastHeartTapRef.current = now;
+  }
 
   const finishSwipe = (x: number, y: number) => {
     const start = swipeStartRef.current;
@@ -2620,7 +2914,10 @@ function PhotoViewer({
       return;
     }
     if (Math.abs(deltaX) < 44 || Math.abs(deltaX) < Math.abs(deltaY) * 1.35) return;
-    if (deltaX < 0 && nextPhoto) setSelectedPhotoId(nextPhoto.id);
+    if (deltaX < 0) {
+      if (nextPhoto) setSelectedPhotoId(nextPhoto.id);
+      else onExitContext();
+    }
     if (deltaX > 0 && previousPhoto) setSelectedPhotoId(previousPhoto.id);
   };
 
@@ -2657,8 +2954,24 @@ function PhotoViewer({
           <span aria-hidden="true" className="h-10 w-10" />
         )}
       </div>
-      <div className="relative min-h-0 flex-1">
+      <div
+        className="relative min-h-0 flex-1"
+        onClick={(event) => {
+          if (event.target instanceof HTMLElement && event.target.closest("button")) return;
+          handlePhotoTap();
+        }}
+      >
         <img alt={photo.title} className={memoryPhotoClass} src={photo.src} />
+        {photo.caption ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-5 pb-6 pt-16 text-white">
+            <p className="max-w-xl text-base font-medium leading-6 drop-shadow">{photo.caption}</p>
+          </div>
+        ) : null}
+        {heartBurstKey ? (
+          <span key={heartBurstKey} className="viewer-heart-burst" aria-hidden="true">
+            ❤️
+          </span>
+        ) : null}
         {showLoveBurst ? (
           <div key={photo.id} className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
             {loveHeartParticles.map((heart, index) => (
@@ -2686,17 +2999,17 @@ function PhotoViewer({
             ‹
           </button>
         ) : null}
-        {nextPhoto ? (
+        {photos.length > 1 ? (
           <button
-            aria-label="Next photo"
+            aria-label={nextPhoto ? "Next photo" : "Exit photo feed"}
             className="absolute right-3 top-1/2 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full bg-black/45 text-3xl"
-            onClick={() => setSelectedPhotoId(nextPhoto.id)}
+            onClick={() => (nextPhoto ? setSelectedPhotoId(nextPhoto.id) : onExitContext())}
           >
             ›
           </button>
         ) : null}
       </div>
-      <div className="rounded-t-2xl bg-white p-4 text-ink">
+      <div className="relative rounded-t-2xl bg-white p-4 text-ink">
         <div className="mb-3 flex items-center justify-between">
           <button
             className={clsx(
@@ -2713,10 +3026,51 @@ function PhotoViewer({
               <p className="text-sm text-ink/60">{photo.location}</p>
             </div>
           </button>
-          <span />
+          {canEdit ? (
+            <button
+              aria-label="Edit caption"
+              className="grid h-10 w-10 place-items-center rounded-full border border-line text-ink/70"
+              onClick={() => setCaptionEditorOpen(true)}
+              type="button"
+            >
+              <Pencil size={17} />
+            </button>
+          ) : (
+            <span />
+          )}
         </div>
         <p className="text-sm text-ink/60">{photoTime(photo)}</p>
-        <p className="mt-3">{photo.caption}</p>
+        {captionEditorOpen ? (
+          <div className="absolute inset-x-3 bottom-[calc(100%+0.75rem)] rounded-xl border border-white/20 bg-ink/95 p-3 text-paper shadow-soft">
+            <label className="flex flex-col gap-2 text-sm font-medium">
+              Caption
+              <textarea
+                className="min-h-24 rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-base text-paper outline-none focus:border-white"
+                value={captionDraft}
+                onChange={(event) => setCaptionDraft(event.target.value)}
+              />
+            </label>
+            <div className="mt-3 flex gap-2">
+              <button
+                className="flex-1 rounded-full bg-paper px-4 py-2 font-medium text-ink"
+                onClick={() => void onEditCaption(photo, captionDraft).then(() => setCaptionEditorOpen(false))}
+                type="button"
+              >
+                Save
+              </button>
+              <button
+                className="flex-1 rounded-full border border-white/15 px-4 py-2 font-medium"
+                onClick={() => {
+                  setCaptionDraft(photo.caption);
+                  setCaptionEditorOpen(false);
+                }}
+                type="button"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -2724,19 +3078,21 @@ function PhotoViewer({
 
 function SharePhotoSheet({
   groups,
+  initialTarget,
   photoUploading,
   src,
   onCancel,
   onShare
 }: {
   groups: Group[];
+  initialTarget: ShareTarget;
   photoUploading: boolean;
   src: string;
   onCancel: () => void;
   onShare: (target: ShareTarget, caption: string) => void;
 }) {
   const [caption, setCaption] = useState("");
-  const [selectedTarget, setSelectedTarget] = useState<ShareTarget>({ type: "connections" });
+  const [selectedTarget, setSelectedTarget] = useState<ShareTarget>(initialTarget);
   const selectedKey = selectedTarget.type === "group" ? `group:${selectedTarget.groupId}` : "connections";
   const destinationOptions = [
     { label: "All connections", value: "connections" },
@@ -2816,7 +3172,8 @@ function NotificationCenter({
   onDeclineConnection,
   onDeclineGroup,
   onOpenConnectionNotification,
-  onOpenGroupNotification
+  onOpenGroupNotification,
+  timezone
 }: {
   connectionNotifications: ConnectionNotification[];
   connectionRequests: ConnectionRequest[];
@@ -2828,6 +3185,7 @@ function NotificationCenter({
   onDeclineGroup: (token: string) => void;
   onOpenConnectionNotification: (notification: ConnectionNotification) => void;
   onOpenGroupNotification: (notification: GroupNotification) => void;
+  timezone: string;
 }) {
   const unreadGroupNotifications = groupNotifications.filter((notification) => !notification.readAt);
   const unreadConnectionNotifications = connectionNotifications.filter((notification) => !notification.readAt);
@@ -2871,6 +3229,7 @@ function NotificationCenter({
           {notificationItems.map((item) => {
             if (item.kind === "group") {
               const { notification } = item;
+              const summary = groupNotificationSummary(notification, timezone);
               return (
                 <button
                   key={item.id}
@@ -2892,9 +3251,9 @@ function NotificationCenter({
                     </div>
                   </div>
                   <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">{notification.message}</p>
-                  {typeof notification.metadata.summary === "string" ? (
+                  {summary ? (
                     <p className="mt-2 rounded-md bg-white px-2 py-1.5 text-xs leading-5 text-ink/55 dark:bg-[#242420] dark:text-paper/55">
-                      {notification.metadata.summary}
+                      {summary}
                     </p>
                   ) : null}
                 </button>
@@ -3066,7 +3425,7 @@ function ConnectionLogo({ className, compact = false }: { className?: string; co
     <div
       className={clsx(
         "select-none text-center font-semibold tracking-normal text-ink dark:text-paper",
-        compact ? "text-2xl leading-none sm:text-3xl" : "text-3xl",
+        compact ? "text-xl leading-none sm:text-2xl" : "text-3xl",
         className
       )}
       aria-label="Connection"
@@ -3935,9 +4294,37 @@ function GroupGallery({
 }) {
   const owners = [...new Set(photos.map((photo) => photo.ownerId))];
   const [membersOpen, setMembersOpen] = useState(false);
+  const groupSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  function finishGroupSwipe(x: number, y: number) {
+    const start = groupSwipeStartRef.current;
+    groupSwipeStartRef.current = null;
+    if (!start || membersOpen) return;
+
+    const deltaX = x - start.x;
+    const deltaY = y - start.y;
+    if (deltaX > 72 && Math.abs(deltaX) > Math.abs(deltaY) * 1.4) {
+      setActiveGroupId(null);
+    }
+  }
 
   return (
-    <section className="flex flex-col gap-7">
+    <section
+      className="flex flex-col gap-7"
+      onTouchStart={(event) => {
+        const touch = event.touches[0];
+        if (!touch) return;
+        groupSwipeStartRef.current = { x: touch.clientX, y: touch.clientY };
+      }}
+      onTouchEnd={(event) => {
+        const touch = event.changedTouches[0];
+        if (!touch) return;
+        finishGroupSwipe(touch.clientX, touch.clientY);
+      }}
+      onTouchCancel={() => {
+        groupSwipeStartRef.current = null;
+      }}
+    >
       <div className="grid grid-cols-[2.5rem_minmax(0,1fr)_5.5rem] items-start">
         <button aria-label="Back to groups" className="grid h-10 w-10 place-items-center" onClick={() => setActiveGroupId(null)}>
           <ArrowLeft size={23} />
@@ -4250,6 +4637,7 @@ function CalendarSurface({
   const lastTapRef = useRef<{ date: string; time: number } | null>(null);
   const today = DateTime.now().setZone(timezone);
   const selected = DateTime.fromISO(selectedDate, { zone: timezone });
+  const todayStart = today.startOf("day");
   const eventDays = [
     ...new Map(
       events
@@ -4259,9 +4647,16 @@ function CalendarSurface({
     ).values()
   ];
   const selectedDay = selected.startOf("day");
-  const agendaDays = eventDays.some((day) => day.toISODate() === selectedDay.toISODate())
-    ? eventDays
-    : [selectedDay, ...eventDays].sort((first, second) => first.toMillis() - second.toMillis());
+  const upcomingEventDays = eventDays.filter((day) => day.toMillis() >= todayStart.toMillis());
+  const agendaBaseDays =
+    selectedDay.toMillis() >= todayStart.toMillis()
+      ? upcomingEventDays
+      : upcomingEventDays.filter((day) => day.hasSame(todayStart, "day"));
+  const agendaDays = agendaBaseDays.some((day) => day.toISODate() === selectedDay.toISODate())
+    ? agendaBaseDays
+    : [selectedDay.toMillis() >= todayStart.toMillis() ? selectedDay : todayStart, ...agendaBaseDays].sort(
+        (first, second) => first.toMillis() - second.toMillis()
+      );
   const monthGridStart = selected.startOf("month").startOf("week");
   const monthGridEnd = selected.endOf("month").endOf("week");
   const monthGridDayCount = Math.round(monthGridEnd.diff(monthGridStart, "days").days) + 1;
@@ -4449,8 +4844,19 @@ function EventList({
             {event.description ? (
               <p className="mt-3 text-sm leading-6 text-ink/70 dark:text-paper/70">{event.description}</p>
             ) : null}
+            {event.reference ? (
+              <a
+                className="mt-3 inline-flex max-w-full items-center gap-2 truncate rounded-full border border-line px-3 py-1.5 text-sm font-medium text-ink/70 transition hover:text-ink dark:border-white/15 dark:text-paper/70 dark:hover:text-paper"
+                href={referenceHref(event.reference)}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <Link2 className="shrink-0" size={15} />
+                <span className="truncate">{event.reference}</span>
+              </a>
+            ) : null}
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <TimeChip label="Your time" time={local.toFormat("ccc, LLL d, h:mm a")} zone={timezone} />
+              <TimeChip label="Your time" time={local.toFormat("ccc, LLL d, h:mm a")} zone={timezone} emoji={event.weather_emoji ?? ""} />
               <TimeChip label="Entered as" time={original.toFormat("ccc, LLL d, h:mm a")} zone={event.source_timezone} />
             </div>
           </article>
@@ -4488,6 +4894,10 @@ function EventForm({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [location, setLocation] = useState("");
+  const [reference, setReference] = useState("");
+  const [locationLatitude, setLocationLatitude] = useState<number | null>(null);
+  const [locationLongitude, setLocationLongitude] = useState<number | null>(null);
+  const [locationPlaceId, setLocationPlaceId] = useState<string | null>(null);
   const [date, setDate] = useState(selectedDate);
   const [time, setTime] = useState("12:00");
   const [timezone, setTimezone] = useState(profile.preferred_timezone);
@@ -4501,6 +4911,10 @@ function EventForm({
     setTitle(editingEvent.title);
     setDescription(editingEvent.description ?? "");
     setLocation(editingEvent.location ?? "");
+    setReference(editingEvent.reference ?? "");
+    setLocationLatitude(editingEvent.location_lat ?? null);
+    setLocationLongitude(editingEvent.location_lon ?? null);
+    setLocationPlaceId(editingEvent.location_place_id ?? null);
     setDate(original.toISODate() ?? selectedDate);
     setTime(original.toFormat("HH:mm"));
     setTimezone(editingEvent.source_timezone);
@@ -4517,10 +4931,17 @@ function EventForm({
       return;
     }
 
+    const fallbackBrowserLocation =
+      !location.trim() && locationLatitude === null && locationLongitude === null ? await getBrowserLocation() : null;
+
     const payload = {
       title: title.trim(),
       description: description.trim() || null,
       location: location.trim() || null,
+      reference: reference.trim() || null,
+      location_lat: locationLatitude ?? fallbackBrowserLocation?.latitude ?? null,
+      location_lon: locationLongitude ?? fallbackBrowserLocation?.longitude ?? null,
+      location_place_id: locationPlaceId,
       starts_at_utc: instant.toUTC().toISO(),
       source_timezone: timezone
     };
@@ -4547,14 +4968,24 @@ function EventForm({
       return;
     }
 
+    const eventWeather = savedEvent
+      ? await fetchEventWeather({
+          fallbackTimezone: profile.preferred_timezone,
+          latitude: payload.location_lat,
+          location: payload.location,
+          longitude: payload.location_lon,
+          startsAtUtc: payload.starts_at_utc
+        })
+      : null;
+    if (savedEvent && eventWeather) {
+      await supabase.from("events").update(weatherColumns(eventWeather)).eq("id", savedEvent.id);
+    }
+
     const action = editingEvent ? "updated" : "added";
     const changeSummary = eventChangeSummary(editingEvent, payload);
     const savedLocalDate = DateTime.fromISO(payload.starts_at_utc ?? "", { zone: "utc" })
       .setZone(profile.preferred_timezone)
       .toISODate();
-    const eventTime = DateTime.fromISO(payload.starts_at_utc ?? "", { zone: "utc" })
-      .setZone(profile.preferred_timezone)
-      .toFormat("LLL d, h:mm a");
     await notifyGroupMembers(
       group.id,
       `${profile.display_name} ${action} an event in ${group.name}.`,
@@ -4564,14 +4995,19 @@ function EventForm({
         eventId: savedEvent?.id ?? editingEvent?.id,
         eventTitle: payload.title,
         eventDate: savedLocalDate ?? date,
+        startsAtUtc: payload.starts_at_utc,
         groupId: group.id,
-        summary: editingEvent ? `${payload.title}: ${changeSummary}` : `${payload.title} • Scheduled for ${eventTime}`
+        summary: editingEvent ? `${payload.title}: ${changeSummary}` : undefined
       }
     );
     onSaved(group.id, savedLocalDate ?? date);
     setTitle("");
     setDescription("");
     setLocation("");
+    setReference("");
+    setLocationLatitude(null);
+    setLocationLongitude(null);
+    setLocationPlaceId(null);
     onCancelEdit();
     await reload();
     setMessage(`Calendar event ${action} successfully.`);
@@ -4610,7 +5046,24 @@ function EventForm({
           </select>
         </label>
         <Field label="Title" value={title} onChange={setTitle} required disabled={!canEdit} />
-        <Field label="Location" value={location} onChange={setLocation} disabled={!canEdit} />
+        <LocationField
+          disabled={!canEdit}
+          selectedPlaceId={locationPlaceId}
+          value={location}
+          onChange={(value) => {
+            setLocation(value);
+            setLocationLatitude(null);
+            setLocationLongitude(null);
+            setLocationPlaceId(null);
+          }}
+          onSelect={(suggestion) => {
+            setLocation(suggestion.displayName);
+            setLocationLatitude(suggestion.latitude);
+            setLocationLongitude(suggestion.longitude);
+            setLocationPlaceId(suggestion.id);
+          }}
+        />
+        <Field label="Reference" value={reference} onChange={setReference} disabled={!canEdit} placeholder="Meeting or reference link" />
         <label className="flex flex-col gap-1 text-sm font-medium">
           Description
           <textarea
@@ -4651,7 +5104,8 @@ function Field({
   onChange,
   type = "text",
   required,
-  disabled
+  disabled,
+  placeholder
 }: {
   label: string;
   value: string;
@@ -4659,6 +5113,7 @@ function Field({
   type?: string;
   required?: boolean;
   disabled?: boolean;
+  placeholder?: string;
 }) {
   return (
     <label className="flex flex-col gap-1 text-sm font-medium">
@@ -4670,7 +5125,92 @@ function Field({
         onChange={(event) => onChange(event.target.value)}
         required={required}
         disabled={disabled}
+        placeholder={placeholder}
       />
+    </label>
+  );
+}
+
+function LocationField({
+  disabled,
+  onChange,
+  onSelect,
+  selectedPlaceId,
+  value
+}: {
+  disabled?: boolean;
+  onChange: (value: string) => void;
+  onSelect: (location: LocationSuggestion) => void;
+  selectedPlaceId: string | null;
+  value: string;
+}) {
+  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (disabled || value.trim().length < 3 || selectedPlaceId) {
+      setSuggestions([]);
+      setOpen(false);
+      return;
+    }
+
+    const timeout = window.setTimeout(async () => {
+      setLoading(true);
+      try {
+        const response = await fetch(`/api/locations?q=${encodeURIComponent(value.trim())}`);
+        const payload = (await response.json()) as { locations?: LocationSuggestion[] };
+        setSuggestions(payload.locations ?? []);
+        setOpen(Boolean(payload.locations?.length));
+      } catch {
+        setSuggestions([]);
+        setOpen(false);
+      } finally {
+        setLoading(false);
+      }
+    }, 350);
+
+    return () => window.clearTimeout(timeout);
+  }, [disabled, selectedPlaceId, value]);
+
+  return (
+    <label className="relative flex flex-col gap-1 text-sm font-medium">
+      Location
+      <input
+        className="rounded-full border border-line bg-white px-3 py-2 text-sm font-normal text-ink outline-none transition focus:border-moss disabled:opacity-50 dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+        type="text"
+        value={value}
+        onChange={(event) => {
+          onChange(event.target.value);
+          setOpen(true);
+        }}
+        disabled={disabled}
+        placeholder="Search a place"
+      />
+      {loading ? (
+        <p className="px-1 text-xs font-normal text-ink/45 dark:text-paper/45">Searching places...</p>
+      ) : null}
+      {open && suggestions.length ? (
+        <div className="absolute inset-x-0 top-full z-20 mt-2 overflow-hidden rounded-xl border border-line bg-white text-ink shadow-soft dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper">
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion.id}
+              className="block w-full border-b border-line px-3 py-2 text-left last:border-b-0 hover:bg-paper dark:border-white/10 dark:hover:bg-white/5"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                onSelect(suggestion);
+                setOpen(false);
+              }}
+              type="button"
+            >
+              <span className="block text-sm font-medium">{suggestion.displayName.split(",")[0]}</span>
+              <span className="line-clamp-1 text-xs font-normal text-ink/55 dark:text-paper/55">
+                {suggestion.displayName}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
     </label>
   );
 }
@@ -4748,11 +5288,14 @@ function Segmented({
   );
 }
 
-function TimeChip({ label, time, zone }: { label: string; time: string; zone: string }) {
+function TimeChip({ emoji = "", label, time, zone }: { emoji?: string; label: string; time: string; zone: string }) {
   return (
     <div className="rounded-lg border border-line/70 bg-paper px-3 py-2 text-sm dark:border-white/10 dark:bg-[#1d1d1a]">
       <p className="text-xs uppercase tracking-[0.14em] text-ink/45 dark:text-paper/45">{label}</p>
-      <p className="mt-1 font-medium">{time}</p>
+      <p className="mt-1 font-medium">
+        {time}
+        {emoji ? <span className="ml-2" aria-hidden="true">{emoji}</span> : null}
+      </p>
       <p className="truncate text-xs text-ink/55 dark:text-paper/55">{zone}</p>
     </div>
   );

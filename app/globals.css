@@ -87,6 +87,38 @@ select {
   }
 }
 
+.viewer-heart-burst {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 2;
+  transform: translate(-50%, -50%) scale(0.65);
+  animation: viewer-heart-pop 0.78s cubic-bezier(0.2, 0.9, 0.24, 1) forwards;
+  filter: drop-shadow(0 0.4rem 1rem rgba(0, 0, 0, 0.34));
+  font-size: clamp(4.25rem, 20vw, 7rem);
+  line-height: 1;
+  pointer-events: none;
+}
+
+@keyframes viewer-heart-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+  58% {
+    opacity: 0.95;
+    transform: translate(-50%, -50%) scale(0.92);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -56%) scale(1.1);
+  }
+}
+
 body.keyboard-open .app-bottom-nav {
   display: none;
 }
