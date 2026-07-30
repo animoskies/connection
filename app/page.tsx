@@ -4990,6 +4990,8 @@ function EventForm({
   const [date, setDate] = useState(selectedDate);
   const [time, setTime] = useState("12:00");
   const [timezone, setTimezone] = useState(profile.preferred_timezone);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   useEffect(() => {
     if (!editingEvent) setDate(selectedDate);
@@ -5011,98 +5013,106 @@ function EventForm({
 
   async function saveEvent(event: FormEvent) {
     event.preventDefault();
-    if (!supabase || !title.trim()) return;
+    if (savingRef.current || !supabase || !title.trim()) return;
+    savingRef.current = true;
+    setSaving(true);
     setMessage("");
 
-    const instant = DateTime.fromISO(`${date}T${time}`, { zone: timezone });
-    if (!instant.isValid) {
-      setMessage("That date, time, and timezone combination is not valid.");
-      return;
-    }
-
-    const fallbackBrowserLocation =
-      !location.trim() && locationLatitude === null && locationLongitude === null ? await getBrowserLocation() : null;
-
-    const payload = {
-      title: title.trim(),
-      description: description.trim() || null,
-      location: location.trim() || null,
-      reference: reference.trim() || null,
-      location_lat: locationLatitude ?? fallbackBrowserLocation?.latitude ?? null,
-      location_lon: locationLongitude ?? fallbackBrowserLocation?.longitude ?? null,
-      location_place_id: locationPlaceId,
-      starts_at_utc: instant.toUTC().toISO(),
-      source_timezone: timezone
-    };
-
-    const { data: savedEvent, error } = editingEvent
-      ? await supabase
-          .from("events")
-          .update({ ...payload, group_id: group.id })
-          .eq("id", editingEvent.id)
-          .select("*")
-          .single()
-      : await supabase
-          .from("events")
-          .insert({
-            ...payload,
-            group_id: group.id,
-            creator_id: profile.id
-          })
-          .select("*")
-          .single();
-
-    if (error) {
-      setMessage(`Failed to save calendar event. ${error.message}`);
-      return;
-    }
-
-    const eventWeather = savedEvent
-      ? await fetchEventWeather({
-          fallbackTimezone: profile.preferred_timezone,
-          latitude: payload.location_lat,
-          location: payload.location,
-          longitude: payload.location_lon,
-          startsAtUtc: payload.starts_at_utc
-        })
-      : null;
-    if (savedEvent && eventWeather) {
-      await supabase.from("events").update(weatherColumns(eventWeather)).eq("id", savedEvent.id);
-    }
-
-    const action = editingEvent ? "updated" : "added";
-    const changeSummary = eventChangeSummary(editingEvent, payload);
-    const savedLocalDate = DateTime.fromISO(payload.starts_at_utc ?? "", { zone: "utc" })
-      .setZone(profile.preferred_timezone)
-      .toISODate();
-    await notifyGroupMembers(
-      group.id,
-      `${profile.display_name} ${action} an event in ${group.name}.`,
-      {
-        type: "calendar_event",
-        action,
-        eventId: savedEvent?.id ?? editingEvent?.id,
-        eventTitle: payload.title,
-        eventDate: savedLocalDate ?? date,
-        startsAtUtc: payload.starts_at_utc,
-        groupId: group.id,
-        summary: editingEvent ? `${payload.title}: ${changeSummary}` : undefined
+    try {
+      const instant = DateTime.fromISO(`${date}T${time}`, { zone: timezone });
+      if (!instant.isValid) {
+        setMessage("That date, time, and timezone combination is not valid.");
+        return;
       }
-    );
-    onSaved(group.id, savedLocalDate ?? date);
-    setTitle("");
-    setDescription("");
-    setLocation("");
-    setReference("");
-    setLocationLatitude(null);
-    setLocationLongitude(null);
-    setLocationPlaceId(null);
-    onCancelEdit();
-    await reload();
-    setMessage(`Calendar event ${action} successfully.`);
+
+      const fallbackBrowserLocation =
+        !location.trim() && locationLatitude === null && locationLongitude === null ? await getBrowserLocation() : null;
+
+      const payload = {
+        title: title.trim(),
+        description: description.trim() || null,
+        location: location.trim() || null,
+        reference: reference.trim() || null,
+        location_lat: locationLatitude ?? fallbackBrowserLocation?.latitude ?? null,
+        location_lon: locationLongitude ?? fallbackBrowserLocation?.longitude ?? null,
+        location_place_id: locationPlaceId,
+        starts_at_utc: instant.toUTC().toISO(),
+        source_timezone: timezone
+      };
+
+      const { data: savedEvent, error } = editingEvent
+        ? await supabase
+            .from("events")
+            .update({ ...payload, group_id: group.id })
+            .eq("id", editingEvent.id)
+            .select("*")
+            .single()
+        : await supabase
+            .from("events")
+            .insert({
+              ...payload,
+              group_id: group.id,
+              creator_id: profile.id
+            })
+            .select("*")
+            .single();
+
+      if (error) {
+        setMessage(`Failed to save calendar event. ${error.message}`);
+        return;
+      }
+
+      const eventWeather = savedEvent
+        ? await fetchEventWeather({
+            fallbackTimezone: profile.preferred_timezone,
+            latitude: payload.location_lat,
+            location: payload.location,
+            longitude: payload.location_lon,
+            startsAtUtc: payload.starts_at_utc
+          })
+        : null;
+      if (savedEvent && eventWeather) {
+        await supabase.from("events").update(weatherColumns(eventWeather)).eq("id", savedEvent.id);
+      }
+
+      const action = editingEvent ? "updated" : "added";
+      const changeSummary = eventChangeSummary(editingEvent, payload);
+      const savedLocalDate = DateTime.fromISO(payload.starts_at_utc ?? "", { zone: "utc" })
+        .setZone(profile.preferred_timezone)
+        .toISODate();
+      await notifyGroupMembers(
+        group.id,
+        `${profile.display_name} ${action} an event in ${group.name}.`,
+        {
+          type: "calendar_event",
+          action,
+          eventId: savedEvent?.id ?? editingEvent?.id,
+          eventTitle: payload.title,
+          eventDate: savedLocalDate ?? date,
+          startsAtUtc: payload.starts_at_utc,
+          groupId: group.id,
+          summary: editingEvent ? `${payload.title}: ${changeSummary}` : undefined
+        }
+      );
+      onSaved(group.id, savedLocalDate ?? date);
+      setTitle("");
+      setDescription("");
+      setLocation("");
+      setReference("");
+      setLocationLatitude(null);
+      setLocationLongitude(null);
+      setLocationPlaceId(null);
+      onCancelEdit();
+      await reload();
+      setMessage(`Calendar event ${action} successfully.`);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
   }
 
   const canEdit = group.role === "owner" || group.role === "editor";
+  const formDisabled = !canEdit || saving;
 
   return (
     <section
@@ -5114,7 +5124,13 @@ function EventForm({
           {editingEvent ? <Pencil size={18} /> : <Plus size={18} />}
           <h2 className="font-semibold">{editingEvent ? "Edit event" : "Add event"}</h2>
         </div>
-        <button aria-label="Close event details" className="grid h-9 w-9 place-items-center rounded-full border border-line dark:border-white/15" onClick={onCancelEdit} type="button">
+        <button
+          aria-label="Close event details"
+          className="grid h-9 w-9 place-items-center rounded-full border border-line disabled:opacity-40 dark:border-white/15"
+          disabled={saving}
+          onClick={onCancelEdit}
+          type="button"
+        >
           <X size={17} />
         </button>
       </div>
@@ -5125,7 +5141,7 @@ function EventForm({
             className="rounded-full border border-line bg-white px-3 py-2 text-sm font-normal text-ink outline-none transition focus:border-moss disabled:opacity-50 dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
             value={group.id}
             onChange={(event) => onGroupChange(event.target.value)}
-            disabled={!canEdit}
+            disabled={formDisabled}
           >
             {groups.map((item) => (
               <option key={item.id} value={item.id}>
@@ -5134,9 +5150,9 @@ function EventForm({
             ))}
           </select>
         </label>
-        <Field label="Title" value={title} onChange={setTitle} required disabled={!canEdit} />
+        <Field label="Title" value={title} onChange={setTitle} required disabled={formDisabled} />
         <LocationField
-          disabled={!canEdit}
+          disabled={formDisabled}
           selectedPlaceId={locationPlaceId}
           value={location}
           onChange={(value) => {
@@ -5152,30 +5168,31 @@ function EventForm({
             setLocationPlaceId(suggestion.id);
           }}
         />
-        <Field label="Reference" value={reference} onChange={setReference} disabled={!canEdit} placeholder="Meeting or reference link" />
+        <Field label="Reference" value={reference} onChange={setReference} disabled={formDisabled} placeholder="Meeting or reference link" />
         <label className="flex flex-col gap-1 text-sm font-medium">
           Description
           <textarea
             className="min-h-20 rounded-lg border border-line bg-white px-3 py-2 text-sm font-normal text-ink outline-none focus:border-moss dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
             value={description}
             onChange={(event) => setDescription(event.target.value)}
-            disabled={!canEdit}
+            disabled={formDisabled}
           />
         </label>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Date" type="date" value={date} onChange={setDate} required disabled={!canEdit} />
-          <Field label="Time" type="time" value={time} onChange={setTime} required disabled={!canEdit} />
+          <Field label="Date" type="date" value={date} onChange={setDate} required disabled={formDisabled} />
+          <Field label="Time" type="time" value={time} onChange={setTime} required disabled={formDisabled} />
         </div>
-        <SelectField label="Timezone entered" value={timezone} onChange={setTimezone} disabled={!canEdit} />
+        <SelectField label="Timezone entered" value={timezone} onChange={setTimezone} disabled={formDisabled} />
         <button
-          disabled={!canEdit}
+          disabled={formDisabled}
           className="rounded-full bg-ink px-4 py-3 font-medium text-paper shadow-sm disabled:opacity-45 dark:bg-paper dark:text-ink"
         >
-          {canEdit ? (editingEvent ? "Update event" : "Save event") : "Member access required"}
+          {saving ? (editingEvent ? "Updating..." : "Saving...") : canEdit ? (editingEvent ? "Update event" : "Save event") : "Member access required"}
         </button>
         {editingEvent ? (
           <button
-            className="rounded-full border border-line px-4 py-3 font-medium text-ink dark:border-white/15 dark:text-paper"
+            className="rounded-full border border-line px-4 py-3 font-medium text-ink disabled:opacity-40 dark:border-white/15 dark:text-paper"
+            disabled={saving}
             onClick={onCancelEdit}
             type="button"
           >
