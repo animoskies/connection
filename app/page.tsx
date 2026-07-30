@@ -265,6 +265,7 @@ const nativePhotoQuality = 0.72;
 const avatarPhotoSize = 320;
 const specialLovePhotoId = "4ebe631a-e43a-4eef-a3da-73f328df44eb";
 const workspaceCachePrefix = "connection-workspace-cache";
+const workspaceLastUserKey = "connection-workspace-last-user";
 const workspaceCacheVersion = 1;
 const loveHeartParticles = [
   { left: 8, delay: 0.05, duration: 2.8, size: 1.25 },
@@ -288,6 +289,16 @@ type ShareTarget =
 
 function workspaceCacheKey(userId: string) {
   return `${workspaceCachePrefix}:${workspaceCacheVersion}:${userId}`;
+}
+
+function eventHasWeatherPlace(event: Pick<EventItem, "location" | "location_lat" | "location_lon">) {
+  return Boolean(
+    event.location?.trim() ||
+      (event.location_lat !== null &&
+        event.location_lat !== undefined &&
+        event.location_lon !== null &&
+        event.location_lon !== undefined)
+  );
 }
 
 async function fetchEventWeather({
@@ -315,29 +326,6 @@ async function fetchEventWeather({
   } catch {
     return null;
   }
-}
-
-function getBrowserLocation() {
-  return new Promise<{ latitude: number; longitude: number } | null>((resolve) => {
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      resolve(null);
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) =>
-        resolve({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude
-        }),
-      () => resolve(null),
-      {
-        enableHighAccuracy: false,
-        maximumAge: 60 * 60 * 1000,
-        timeout: 2500
-      }
-    );
-  });
 }
 
 function weatherColumns(weather: EventWeather) {
@@ -559,8 +547,8 @@ function calendarNotificationStyle(notification: GroupNotification) {
 
   if (notification.metadata.action === "deleted") {
     return {
-      card: "border-red-500/35 bg-red-500/[0.07] dark:border-red-300/25 dark:bg-red-400/[0.08]",
-      summary: "bg-red-500/[0.10] text-red-800 dark:bg-red-300/[0.10] dark:text-red-200"
+      card: "border-red-500/45 bg-red-500/[0.08] dark:border-red-300/35 dark:bg-red-400/[0.10]",
+      summary: "bg-red-600 text-white dark:bg-red-500 dark:text-white"
     };
   }
 
@@ -573,8 +561,8 @@ function calendarNotificationStyle(notification: GroupNotification) {
 
   if (notification.metadata.action === "added") {
     return {
-      card: "border-moss/50 bg-moss/[0.08] dark:border-moss/35 dark:bg-moss/[0.12]",
-      summary: "bg-moss/[0.12] text-ink dark:bg-moss/[0.18] dark:text-paper"
+      card: "border-emerald-500/45 bg-emerald-500/[0.08] dark:border-emerald-300/35 dark:bg-emerald-400/[0.10]",
+      summary: "bg-emerald-600 text-white dark:bg-emerald-500 dark:text-white"
     };
   }
 
@@ -757,9 +745,14 @@ export default function Home() {
   const [connections, setConnections] = useState<ConnectionProfile[]>([]);
   const [connectionSearchResults, setConnectionSearchResults] = useState<ConnectionProfile[]>([]);
   const [connectionQuery, setConnectionQuery] = useState("");
+  const [cachedUserId, setCachedUserId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem(workspaceLastUserKey);
+  });
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const [selectedConnectionProfile, setSelectedConnectionProfile] = useState<ConnectionProfile | null>(null);
   const [events, setEvents] = useState<EventItem[]>([]);
+  const [viewerWeatherByEventId, setViewerWeatherByEventId] = useState<Record<string, EventWeather>>({});
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AppTab>("connections");
@@ -906,6 +899,11 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (sessionUserId || !cachedUserId) return;
+    restoreWorkspaceCache(cachedUserId);
+  }, [cachedUserId, sessionUserId]);
+
+  useEffect(() => {
     const inviteToken = new URLSearchParams(window.location.search).get("invite");
     if (!inviteToken) return;
     localStorage.setItem("connection-pending-invite", inviteToken);
@@ -948,7 +946,10 @@ export default function Home() {
 
     const {
       data: { subscription }
-    } = client.auth.onAuthStateChange((_event, session) => {
+    } = client.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        clearWorkspaceCache(sessionUserId ?? cachedUserId);
+      }
       setSessionUserId(session?.user.id ?? null);
     });
 
@@ -970,6 +971,7 @@ export default function Home() {
       setSelectedConnectionId(null);
       setSelectedConnectionProfile(null);
       setEvents([]);
+      setViewerWeatherByEventId({});
       setPhotos([]);
       return;
     }
@@ -1001,6 +1003,8 @@ export default function Home() {
         version: workspaceCacheVersion
       };
       localStorage.setItem(workspaceCacheKey(sessionUserId), JSON.stringify(snapshot));
+      localStorage.setItem(workspaceLastUserKey, sessionUserId);
+      setCachedUserId(sessionUserId);
     }, 250);
 
     return () => window.clearTimeout(timeout);
@@ -1039,6 +1043,28 @@ export default function Home() {
     } catch {
       localStorage.removeItem(workspaceCacheKey(userId));
     }
+  }
+
+  function clearWorkspaceCache(userId?: string | null) {
+    const cachedId = userId ?? localStorage.getItem(workspaceLastUserKey);
+    if (cachedId) localStorage.removeItem(workspaceCacheKey(cachedId));
+    localStorage.removeItem(workspaceLastUserKey);
+    setCachedUserId(null);
+    setProfile(null);
+    setGroups([]);
+    setGroupMembers({});
+    setGroupInvites([]);
+    setGroupNotifications([]);
+    setConnectionRequests([]);
+    setConnectionNotifications([]);
+    setConnections([]);
+    setConnectionSearchResults([]);
+    setConnectionQuery("");
+    setSelectedConnectionId(null);
+    setSelectedConnectionProfile(null);
+    setEvents([]);
+    setViewerWeatherByEventId({});
+    setPhotos([]);
   }
 
   async function loadWorkspace(userId = sessionUserId, options: { clearMessage?: boolean } = {}) {
@@ -1153,7 +1179,7 @@ export default function Home() {
 
       if (eventError) setMessage(eventError.message);
       setEvents(eventData ?? []);
-      void refreshDueEventWeather(eventData ?? []);
+      void refreshDueEventWeather(eventData ?? [], profileData?.preferred_timezone ?? profile?.preferred_timezone);
     } else {
       setEvents([]);
     }
@@ -1168,23 +1194,28 @@ export default function Home() {
     setLoading(false);
   }
 
-  async function refreshDueEventWeather(eventRows: EventItem[]) {
+  async function refreshDueEventWeather(eventRows: EventItem[], viewerTimezone = profile?.preferred_timezone) {
     if (!supabase) return;
     const now = DateTime.utc();
     const dueEvents = eventRows
       .filter((event) => {
-        if (!event.location && (event.location_lat === null || event.location_lat === undefined || event.location_lon === null || event.location_lon === undefined) && !event.source_timezone) return false;
+        const hasWeatherPlace = eventHasWeatherPlace(event);
+        if (!hasWeatherPlace && !viewerTimezone) return false;
         const eventTime = DateTime.fromISO(event.starts_at_utc, { zone: "utc" });
         if (!eventTime.isValid || eventTime <= now) return false;
-        if (!event.weather_checked_at) return true;
-        if (!event.weather_next_check_at) return false;
-        return DateTime.fromISO(event.weather_next_check_at, { zone: "utc" }) <= now;
+        const localWeather = viewerWeatherByEventId[event.id];
+        const checkedAt = hasWeatherPlace ? event.weather_checked_at : localWeather?.checkedAt;
+        const nextCheckAt = hasWeatherPlace ? event.weather_next_check_at : localWeather?.nextCheckAt;
+        if (!checkedAt) return true;
+        if (!nextCheckAt) return false;
+        return DateTime.fromISO(nextCheckAt, { zone: "utc" }) <= now;
       })
       .slice(0, 5);
 
     for (const event of dueEvents) {
+      const hasWeatherPlace = eventHasWeatherPlace(event);
       const weather = await fetchEventWeather({
-        fallbackTimezone: event.source_timezone,
+        fallbackTimezone: hasWeatherPlace ? event.source_timezone : viewerTimezone,
         latitude: event.location_lat,
         location: event.location,
         longitude: event.location_lon,
@@ -1192,6 +1223,10 @@ export default function Home() {
       });
       if (!weather) continue;
       const columns = weatherColumns(weather);
+      if (!hasWeatherPlace) {
+        setViewerWeatherByEventId((currentWeather) => ({ ...currentWeather, [event.id]: weather }));
+        continue;
+      }
       const { error } = await supabase.from("events").update(columns).eq("id", event.id);
       if (!error) {
         setEvents((currentEvents) =>
@@ -1842,26 +1877,27 @@ export default function Home() {
   }, [calendarEvents, preferredTimezone, selectedDate]);
   const pullProgress = Math.min(1, pullDistance / 72);
   const pullRefreshLabel = refreshing ? "Refreshing" : pullProgress >= 1 ? "Release" : "Pull to refresh";
+  const visibleUserId = sessionUserId ?? (loading && profile ? cachedUserId : null);
 
   if (!hasSupabaseConfig) {
     return <ConfigScreen />;
   }
 
-  if (loading && !sessionUserId) {
+  if (loading && !visibleUserId) {
     return <ShellStatus label="Opening" />;
   }
 
-  if (!sessionUserId) {
+  if (!visibleUserId) {
     return <AuthScreen setMessage={setMessage} message={message} />;
   }
 
   if (!profile) {
     return (
       <ProfileSetup
-        userId={sessionUserId}
+        userId={visibleUserId}
         setMessage={setMessage}
         message={message}
-        onComplete={() => loadWorkspace(sessionUserId)}
+        onComplete={() => loadWorkspace(visibleUserId)}
       />
     );
   }
@@ -2087,6 +2123,7 @@ export default function Home() {
             setView={setView}
             notifyGroupMembers={notifyGroupMembers}
             timezone={preferredTimezone}
+            viewerWeatherByEventId={viewerWeatherByEventId}
             view={view}
           />
         ) : null}
@@ -2639,6 +2676,7 @@ function CalendarView({
   setSelectedDate,
   setView,
   timezone,
+  viewerWeatherByEventId,
   view
 }: {
   calendarGroup: Group | null;
@@ -2657,6 +2695,7 @@ function CalendarView({
   setSelectedDate: (value: string) => void;
   setView: (view: ViewMode) => void;
   timezone: string;
+  viewerWeatherByEventId: Record<string, EventWeather>;
   view: ViewMode;
 }) {
   const writableGroup = calendarGroup ?? groups[0] ?? null;
@@ -2786,6 +2825,7 @@ function CalendarView({
             setEventModalOpen(true);
           }}
           timezone={timezone}
+          viewerWeatherByEventId={viewerWeatherByEventId}
         />
       </div>
       {eventModalOpen && formGroup ? (
@@ -3341,7 +3381,7 @@ function NotificationCenter({
                   </div>
                   <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">{notification.message}</p>
                   {summary ? (
-                    <p className={clsx("mt-2 rounded-md px-2 py-1.5 text-xs leading-5", actionStyle.summary)}>
+                    <p className={clsx("mt-2 rounded-md px-2 py-1.5 text-xs font-semibold leading-5 shadow-sm", actionStyle.summary)}>
                       {summary}
                     </p>
                   ) : null}
@@ -4845,7 +4885,8 @@ function EventList({
   events,
   onDelete,
   onEdit,
-  timezone
+  timezone,
+  viewerWeatherByEventId
 }: {
   editableGroups: string[];
   emptyBody: string;
@@ -4853,6 +4894,7 @@ function EventList({
   onDelete: (event: EventItem) => void;
   onEdit: (event: EventItem) => void;
   timezone: string;
+  viewerWeatherByEventId: Record<string, EventWeather>;
 }) {
   const [actionEventId, setActionEventId] = useState<string | null>(null);
 
@@ -4866,6 +4908,9 @@ function EventList({
         const local = localDateTime(event, timezone);
         const original = sourceDateTime(event);
         const canEdit = editableGroups.includes(event.group_id);
+        const weatherEmoji = eventHasWeatherPlace(event)
+          ? event.weather_emoji ?? ""
+          : viewerWeatherByEventId[event.id]?.emoji ?? "";
 
         return (
           <article
@@ -4945,7 +4990,7 @@ function EventList({
               </a>
             ) : null}
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <TimeChip label="Your time" time={local.toFormat("ccc, LLL d, h:mm a")} zone={timezone} emoji={event.weather_emoji ?? ""} />
+              <TimeChip label="Your time" time={local.toFormat("ccc, LLL d, h:mm a")} zone={timezone} emoji={weatherEmoji} />
               <TimeChip label="Entered as" time={original.toFormat("ccc, LLL d, h:mm a")} zone={event.source_timezone} />
             </div>
           </article>
@@ -5025,16 +5070,13 @@ function EventForm({
         return;
       }
 
-      const fallbackBrowserLocation =
-        !location.trim() && locationLatitude === null && locationLongitude === null ? await getBrowserLocation() : null;
-
       const payload = {
         title: title.trim(),
         description: description.trim() || null,
         location: location.trim() || null,
         reference: reference.trim() || null,
-        location_lat: locationLatitude ?? fallbackBrowserLocation?.latitude ?? null,
-        location_lon: locationLongitude ?? fallbackBrowserLocation?.longitude ?? null,
+        location_lat: locationLatitude,
+        location_lon: locationLongitude,
         location_place_id: locationPlaceId,
         starts_at_utc: instant.toUTC().toISO(),
         source_timezone: timezone
@@ -5062,7 +5104,7 @@ function EventForm({
         return;
       }
 
-      const eventWeather = savedEvent
+      const eventWeather = savedEvent && (payload.location || (payload.location_lat !== null && payload.location_lon !== null))
         ? await fetchEventWeather({
             fallbackTimezone: profile.preferred_timezone,
             latitude: payload.location_lat,
