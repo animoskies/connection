@@ -3116,7 +3116,7 @@ function PhotoViewer({
         ) : null}
 
       </div>
-      <div className="relative h-[calc(10rem+env(safe-area-inset-bottom))] shrink-0 overflow-hidden rounded-t-2xl border-t border-white/10 bg-[#1d1d1a] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-paper">
+      <div className="relative h-[calc(10rem+env(safe-area-inset-bottom))] shrink-0 overflow-hidden border-t border-white/10 bg-[#1d1d1a] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-paper">
         <div className="flex items-start justify-between gap-3">
           <button
             className={clsx(
