@@ -547,8 +547,8 @@ function calendarNotificationStyle(notification: GroupNotification) {
 
   if (notification.metadata.action === "deleted") {
     return {
-      card: "border-red-500/45 bg-red-500/[0.08] dark:border-red-300/35 dark:bg-red-400/[0.10]",
-      summary: "bg-red-600 text-white dark:bg-red-500 dark:text-white"
+      card: "border-red-500/30 bg-red-500/[0.06] dark:border-red-300/20 dark:bg-red-400/[0.07]",
+      summary: "bg-red-500/[0.16] text-red-900 dark:bg-red-300/[0.14] dark:text-red-100"
     };
   }
 
@@ -561,8 +561,8 @@ function calendarNotificationStyle(notification: GroupNotification) {
 
   if (notification.metadata.action === "added") {
     return {
-      card: "border-emerald-500/45 bg-emerald-500/[0.08] dark:border-emerald-300/35 dark:bg-emerald-400/[0.10]",
-      summary: "bg-emerald-600 text-white dark:bg-emerald-500 dark:text-white"
+      card: "border-emerald-500/30 bg-emerald-500/[0.06] dark:border-emerald-300/20 dark:bg-emerald-400/[0.07]",
+      summary: "bg-emerald-500/[0.16] text-emerald-950 dark:bg-emerald-300/[0.14] dark:text-emerald-100"
     };
   }
 
