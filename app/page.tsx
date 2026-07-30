@@ -3031,7 +3031,7 @@ function PhotoViewer({
 
   return (
     <div
-      className="fixed inset-0 z-30 flex flex-col bg-ink text-paper"
+      className="fixed inset-0 z-30 bg-ink text-paper"
       onTouchStart={(event) => {
         const touch = event.touches[0];
         if (!touch) return;
@@ -3046,35 +3046,74 @@ function PhotoViewer({
         swipeStartRef.current = null;
       }}
     >
-      <div className="flex items-center justify-between px-4 py-4">
-        <button onClick={() => setSelectedPhotoId(null)}>Back</button>
-        <p className="text-sm">{currentIndex + 1} / {photos.length}</p>
-        {canDelete ? (
-          <button
-            aria-label="Delete photo"
-            className="grid h-10 w-10 place-items-center"
-            onClick={() => onDelete(photo)}
-            type="button"
-          >
-            <Trash2 size={19} />
-          </button>
-        ) : (
-          <span aria-hidden="true" className="h-10 w-10" />
-        )}
-      </div>
       <div
-        className="relative min-h-0 flex-1"
+        className="relative h-full"
         onClick={(event) => {
           if (event.target instanceof HTMLElement && event.target.closest("button")) return;
           handlePhotoTap();
         }}
       >
         <img alt={photo.title} className={memoryPhotoClass} src={photo.src} />
-        {photo.caption ? (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/35 to-transparent px-5 pb-6 pt-16 text-white">
-            <p className="max-w-xl text-base font-medium leading-6 drop-shadow">{photo.caption}</p>
+
+        <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/75 via-black/35 to-transparent px-4 pb-16 pt-[calc(1rem+env(safe-area-inset-top))]">
+          <div className="grid grid-cols-3 items-center text-white drop-shadow">
+            <button className="justify-self-start text-sm font-medium" onClick={() => setSelectedPhotoId(null)} type="button">
+              Back
+            </button>
+            <p className="justify-self-center text-sm font-semibold">{currentIndex + 1} / {photos.length}</p>
+            {canDelete ? (
+              <button
+                aria-label="Delete photo"
+                className="grid h-9 w-9 place-items-center justify-self-end rounded-full bg-black/25"
+                onClick={() => onDelete(photo)}
+                type="button"
+              >
+                <Trash2 size={18} />
+              </button>
+            ) : (
+              <span aria-hidden="true" className="h-9 w-9 justify-self-end" />
+            )}
           </div>
-        ) : null}
+        </div>
+
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent px-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-24 text-white">
+          <div className="flex items-end justify-between gap-3">
+            <button
+              className={clsx(
+                "min-w-0 flex-1 text-left",
+                canOpenOwner ? "transition hover:opacity-80" : "cursor-default"
+              )}
+              disabled={!canOpenOwner}
+              onClick={() => onOpenOwner(photo)}
+              type="button"
+            >
+              <div className="flex items-center gap-3">
+                <Avatar name={photo.owner} src={photo.ownerAvatar} size="sm" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold drop-shadow">{photo.owner}</p>
+                  <p className="truncate text-xs text-white/75 drop-shadow">{photoTime(photo)}</p>
+                </div>
+              </div>
+              {photo.location ? <p className="mt-2 truncate text-xs text-white/70 drop-shadow">{photo.location}</p> : null}
+              {photo.caption ? (
+                <p className="mt-3 max-w-xl text-base font-medium leading-6 text-white drop-shadow">
+                  {photo.caption}
+                </p>
+              ) : null}
+            </button>
+            {canEdit ? (
+              <button
+                aria-label="Edit caption"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-black/35 text-white"
+                onClick={() => setCaptionEditorOpen(true)}
+                type="button"
+              >
+                <Pencil size={16} />
+              </button>
+            ) : null}
+          </div>
+        </div>
+
         {heartBurstKey ? (
           <span key={heartBurstKey} className="viewer-heart-burst" aria-hidden="true">
             ❤️
@@ -3116,40 +3155,9 @@ function PhotoViewer({
             ›
           </button>
         ) : null}
-      </div>
-      <div className="relative rounded-t-2xl bg-white p-4 text-ink">
-        <div className="mb-3 flex items-center justify-between">
-          <button
-            className={clsx(
-              "flex items-center gap-3 text-left",
-              canOpenOwner ? "transition hover:opacity-75" : "cursor-default"
-            )}
-            disabled={!canOpenOwner}
-            onClick={() => onOpenOwner(photo)}
-            type="button"
-          >
-            <Avatar name={photo.owner} src={photo.ownerAvatar} />
-            <div>
-              <p className="font-semibold">{photo.owner}</p>
-              <p className="text-sm text-ink/60">{photo.location}</p>
-            </div>
-          </button>
-          {canEdit ? (
-            <button
-              aria-label="Edit caption"
-              className="grid h-10 w-10 place-items-center rounded-full border border-line text-ink/70"
-              onClick={() => setCaptionEditorOpen(true)}
-              type="button"
-            >
-              <Pencil size={17} />
-            </button>
-          ) : (
-            <span />
-          )}
-        </div>
-        <p className="text-sm text-ink/60">{photoTime(photo)}</p>
+
         {captionEditorOpen ? (
-          <div className="absolute inset-x-3 bottom-[calc(100%+0.75rem)] rounded-xl border border-white/20 bg-ink/95 p-3 text-paper shadow-soft">
+          <div className="absolute inset-x-3 bottom-[calc(1rem+env(safe-area-inset-bottom))] rounded-xl border border-white/20 bg-ink/95 p-3 text-paper shadow-soft">
             <label className="flex flex-col gap-2 text-sm font-medium">
               Caption
               <textarea
