@@ -376,50 +376,6 @@ function profileErrorMessage(error: { code?: string; message?: string }) {
   return error.message ?? "Could not save profile.";
 }
 
-function isTransientMessage(message: string) {
-  return [
-    "Latest photos, groups, invites, notifications, and calendar loaded.",
-    "Photo saved to group successfully.",
-    "Photo saved to connections successfully.",
-    "Photo deleted successfully.",
-    "Photo share link copied.",
-    "Could not create share link. Authentication required.",
-    "Could not copy share link. Try again.",
-    "Beta link copied.",
-    "Beta access requested.",
-    "Beta request approved.",
-    "Beta request approved. Invite email sent.",
-    "Beta request sent. Please log in once approved via email.",
-    "Connection request sent.",
-    "Connection request accepted.",
-    "Connection request declined.",
-    "Connection removed.",
-    "Group saved successfully.",
-    "Group saved successfully. Invites sent.",
-    "Group updated successfully.",
-    "Group deleted successfully.",
-    "Left group.",
-    "Calendar event added successfully.",
-    "Calendar event updated successfully.",
-    "Calendar event deleted successfully.",
-    "Calendar exported.",
-    "Profile picture updated.",
-    "Account settings updated.",
-    "Dark mode on.",
-    "Dark mode off.",
-    "Invite link copied.",
-    "Invite link created. Tap the link to copy it manually.",
-    "Select and copy the link manually.",
-    "Invite declined."
-  ].includes(message) ||
-    message.startsWith("Beta request sent.") ||
-    message.startsWith("Invite sent to ") ||
-    message.startsWith("Joined ") ||
-    message.startsWith("Only admin ") ||
-    message.startsWith("Could not create share link.") ||
-    message.startsWith("Connect with ");
-}
-
 function mapConnectionProfile(row: ConnectionProfileRow): ConnectionProfile {
   return {
     id: row.id,
@@ -1067,10 +1023,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!message || !isTransientMessage(message)) return;
+    if (!message) return;
     const timeout = window.setTimeout(() => {
       setMessage((currentMessage) => (currentMessage === message ? "" : currentMessage));
-    }, 1800);
+    }, 2000);
     return () => window.clearTimeout(timeout);
   }, [message]);
 
