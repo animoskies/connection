@@ -16,7 +16,7 @@ const today = [
   {
     icon: Camera,
     title: "photo memory feed",
-    body: "share photos to all connections or to one group, with simple captions and quiet notifications where they matter."
+    body: "post in the moment instead of choosing from a thousand photos later, then revisit your shared memory lane."
   },
   {
     icon: CalendarDays,
@@ -38,8 +38,8 @@ const next = [
   },
   {
     icon: Sparkles,
-    title: "connection cam",
-    body: "a tiny standalone camera and mic for travel and daily life, able to queue photos and thoughts back into Connection."
+    title: "connection camera",
+    body: "a tiny hardware companion with a built-in mic that queues photos, voice notes, and project sparks back into Connection."
   }
 ];
 
@@ -67,38 +67,79 @@ export default function BetaPage() {
               your people, photos, groups, and plans together.
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-[#f7f4ee]/62">
-              Connection is a private space for the people closest to you. photos stay personal, groups stay intentional,
-              and plans stay clear even when everyone lives in different timezones.
+              Connection is a private space for the people closest to you and the creative hobbies you want to keep alive.
+              it stays quiet, removes friction, and helps you capture the moment while you are still inside it.
             </p>
           </div>
 
           <div className="rounded-2xl border border-white/12 bg-[#23231f] p-5 shadow-2xl shadow-black/20">
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm font-semibold text-[#f7f4ee]">current beta</p>
-                <p className="mt-1 text-sm leading-6 text-[#f7f4ee]/58">invite-only while the foundation gets polished.</p>
+                <p className="text-[0.64rem] font-bold uppercase tracking-[0.24em] text-[#b9deef]">hardware companion</p>
+                <p className="mt-2 text-xl font-semibold text-[#f7f4ee]">connection camera</p>
+                <p className="mt-2 text-sm leading-6 text-[#f7f4ee]/58">
+                  a small raspberry-pi-style companion with a built-in mic for photos, voice notes, and project context.
+                </p>
               </div>
-              <div className="flex -space-x-2">
-                {["n", "p", "s"].map((letter) => (
-                  <span
-                    className="grid h-9 w-9 place-items-center rounded-full border border-[#23231f] bg-[#b9deef] text-sm font-bold text-[#111]"
-                    key={letter}
-                  >
-                    {letter}
-                  </span>
-                ))}
-              </div>
+              <span className="rounded-full bg-[#d8f4ff] px-3 py-1 text-[0.58rem] font-bold uppercase tracking-[0.2em] text-[#13242b]">
+                sketch
+              </span>
             </div>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-white/10 bg-black/18 p-4">
-                <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-[#f7f4ee]/45">group</p>
-                <h2 className="mt-2 text-2xl font-semibold">family</h2>
-                <p className="mt-2 text-sm leading-6 text-[#f7f4ee]/58">private photos and plans stay with the people in that group.</p>
+
+            <div className="mt-6 rounded-2xl border border-dashed border-white/18 bg-black/18 p-4">
+              <div className="relative mx-auto h-52 max-w-sm">
+                <div className="absolute left-5 top-8 h-32 w-36 rotate-[-2deg] rounded-[1.35rem] border-2 border-[#f7f4ee]/55 bg-[#20201c] shadow-2xl shadow-black/20">
+                  <div className="absolute left-5 top-5 grid h-12 w-12 place-items-center rounded-full border border-[#f7f4ee]/40 bg-black/30">
+                    <div className="h-6 w-6 rounded-full bg-[#0e0e0c] ring-4 ring-[#f7f4ee]/20" />
+                  </div>
+                  <div className="absolute bottom-5 left-5 flex gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#f7f4ee]/65" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#f7f4ee]/65" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#f7f4ee]/65" />
+                  </div>
+                  <span className="absolute right-5 top-6 h-2.5 w-2.5 rounded-full bg-[#9fe4a7] shadow-[0_0_16px_rgba(159,228,167,0.7)]" />
+                  <div className="absolute bottom-4 right-4 h-9 w-3 rounded-full border border-[#f7f4ee]/35" />
+                </div>
+
+                <div className="absolute left-[9.5rem] top-8 space-y-2">
+                  <div className="h-2 w-16 rounded-full bg-[#b9deef]/75" />
+                  <div className="h-2 w-24 rounded-full bg-[#b9deef]/45" />
+                  <div className="h-2 w-12 rounded-full bg-[#b9deef]/65" />
+                </div>
+
+                <div className="absolute bottom-5 right-0 w-44 rounded-2xl border border-white/12 bg-[#151512] p-3">
+                  <p className="text-[0.58rem] font-bold uppercase tracking-[0.2em] text-[#f7f4ee]/45">queued</p>
+                  <div className="mt-3 space-y-2 text-sm font-semibold">
+                    <p>photo to family</p>
+                    <p className="text-[#f7f4ee]/60">voice note to project</p>
+                    <p className="text-[#f7f4ee]/60">memory lane</p>
+                  </div>
+                </div>
+
+                <div className="absolute bottom-14 left-0 flex items-end gap-1">
+                  {[18, 34, 22, 42, 28, 38, 16].map((height, index) => (
+                    <span
+                      className="w-1.5 rounded-full bg-[#c87958]/80"
+                      key={`${height}-${index}`}
+                      style={{ height }}
+                    />
+                  ))}
+                </div>
               </div>
-              <div className="rounded-xl border border-white/10 bg-black/18 p-4">
-                <p className="text-[0.64rem] font-semibold uppercase tracking-[0.22em] text-[#f7f4ee]/45">notice</p>
-                <h2 className="mt-2 text-2xl font-semibold">just now</h2>
-                <p className="mt-2 text-sm leading-6 text-[#f7f4ee]/58">someone added dinner in your group calendar.</p>
+
+              <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
+                <div className="rounded-xl border border-white/10 p-3">
+                  <p className="font-semibold">instant share</p>
+                  <p className="mt-1 text-[#f7f4ee]/52">less sorting later</p>
+                </div>
+                <div className="rounded-xl border border-white/10 p-3">
+                  <p className="font-semibold">built-in mic</p>
+                  <p className="mt-1 text-[#f7f4ee]/52">thoughts to text</p>
+                </div>
+                <div className="rounded-xl border border-white/10 p-3">
+                  <p className="font-semibold">projects</p>
+                  <p className="mt-1 text-[#f7f4ee]/52">ideas become plans</p>
+                </div>
               </div>
             </div>
           </div>
@@ -111,7 +152,8 @@ export default function BetaPage() {
               <h2 className="mt-3 text-3xl font-semibold">simple, private, already useful.</h2>
             </div>
             <p className="max-w-md text-sm leading-6 text-[#f7f4ee]/52">
-              the beta is focused on the daily rhythm first: post, plan, notify, and come back without noise.
+              the beta is focused on the daily rhythm first: capture the moment, share it to the right place, plan with
+              less friction, and come back without noise.
             </p>
           </div>
           <div className="mt-6 grid gap-4 md:grid-cols-3">
@@ -132,7 +174,8 @@ export default function BetaPage() {
               <h2 className="mt-3 text-3xl font-semibold">from memories to creative momentum.</h2>
             </div>
             <p className="max-w-md text-sm leading-6 text-[#f7f4ee]/52">
-              the next direction is less about posting more and more about helping your real life ideas move.
+              the next direction is less about posting more and more about keeping relationships close while helping real
+              life ideas move.
             </p>
           </div>
           <div className="mt-6 grid gap-4 md:grid-cols-3">
