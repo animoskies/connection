@@ -356,6 +356,13 @@ function usernameError(value: string) {
     : "Username must be 3-24 lowercase letters, numbers, or underscores.";
 }
 
+function profileErrorMessage(error: { code?: string; message?: string }) {
+  if (error.code === "23505" || error.message?.includes("profiles_username_key")) {
+    return "Username is already taken.";
+  }
+  return error.message ?? "Could not save profile.";
+}
+
 function isTransientMessage(message: string) {
   return [
     "Latest photos, groups, invites, notifications, and calendar loaded.",
@@ -599,7 +606,7 @@ function buildSimplePdf(lines: PdfLine[]) {
       const pillHeight = 30;
       if (y < margin + pillHeight + 8) pushPage();
       content += `q 0.90 0.93 0.86 rg ${margin} ${y - pillHeight + 7} ${contentWidth} ${pillHeight} re f Q\n`;
-      content += `BT /F2 ${size} Tf ${margin + 12} ${y - 12} Td (${pdfEscape(line.text)}) Tj ET\n`;
+      content += `BT /F2 ${size} Tf ${margin} ${y - 12} Td (${pdfEscape(line.text)}) Tj ET\n`;
       y -= gap;
     } else {
       content += `BT /${line.bold ? "F2" : "F1"} ${size} Tf ${margin} ${y} Td (${pdfEscape(line.text)}) Tj ET\n`;
@@ -1475,7 +1482,7 @@ export default function Home() {
     const { data, error } = await supabase.rpc("pending_group_invites");
 
     if (error) {
-      setMessage(error.message);
+      setMessage(profileErrorMessage(error));
       return;
     }
 
@@ -2221,7 +2228,7 @@ export default function Home() {
           </div>
           <button
             aria-label="About Connection beta"
-            className="absolute left-1/2 flex -translate-x-1/2 items-baseline gap-1.5 rounded-md px-2 py-1 transition hover:bg-ink/[0.04] dark:hover:bg-paper/[0.06]"
+            className="absolute left-1/2 -translate-x-1/2 rounded-md px-2 py-1 transition hover:bg-ink/[0.04] dark:hover:bg-paper/[0.06]"
             onClick={() => {
               setAccountOpen(false);
               setNotificationsOpen(false);
@@ -2230,9 +2237,11 @@ export default function Home() {
             }}
             type="button"
           >
-            <ConnectionLogo compact />
-            <span className="rounded-full bg-skysoft px-1.5 py-0.5 text-[0.58rem] font-semibold uppercase leading-none tracking-[0.14em] text-[#2f7fa0] dark:bg-[#153141] dark:text-[#8ed8f5]">
-              beta
+            <span className="relative inline-flex pb-2 pr-7">
+              <ConnectionLogo compact />
+              <span className="absolute bottom-0 right-0 rounded-full bg-skysoft px-2 py-0.5 text-[0.58rem] font-bold uppercase leading-none tracking-[0.08em] text-ink shadow-sm ring-1 ring-white/70 dark:bg-[#d8f4ff] dark:text-[#1d2b34] dark:ring-black/40">
+                beta
+              </span>
             </span>
           </button>
           <div ref={notificationAreaRef} className="relative flex w-20 items-center justify-end gap-1">
@@ -2972,15 +2981,18 @@ function CalendarView({
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [eventModalOpen, setEventModalOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportGroupId, setExportGroupId] = useState(calendarGroupId);
   const [exportStartDate, setExportStartDate] = useState("");
   const [exportEndDate, setExportEndDate] = useState("");
   const [eventGroupId, setEventGroupId] = useState(writableGroup?.id ?? "");
   const editingEvent = editingEventId ? events.find((event) => event.id === editingEventId) ?? null : null;
   const editableGroups = groups.filter((group) => group.role === "owner" || group.role === "editor");
-  const exportLabel = calendarGroup?.name ?? "All groups";
+  const exportGroup = groups.find((group) => group.id === exportGroupId) ?? null;
+  const exportBaseEvents = exportGroupId === "all" ? events : events.filter((event) => event.group_id === exportGroupId);
+  const exportLabel = exportGroup?.name ?? "All groups";
   const exportStart = exportStartDate ? DateTime.fromISO(exportStartDate, { zone: timezone }).startOf("day") : null;
   const exportEnd = exportEndDate ? DateTime.fromISO(exportEndDate, { zone: timezone }).endOf("day") : null;
-  const exportEvents = events.filter((event) => {
+  const exportEvents = exportBaseEvents.filter((event) => {
     const eventTime = localDateTime(event, timezone);
     if (exportStart?.isValid && eventTime.toMillis() < exportStart.toMillis()) return false;
     if (exportEnd?.isValid && eventTime.toMillis() > exportEnd.toMillis()) return false;
@@ -2999,6 +3011,11 @@ function CalendarView({
     if (eventModalOpen || editingEvent) return;
     setEventGroupId(writableGroup?.id ?? "");
   }, [eventModalOpen, editingEvent, writableGroup?.id]);
+
+  useEffect(() => {
+    if (exportModalOpen) return;
+    setExportGroupId(calendarGroupId);
+  }, [calendarGroupId, exportModalOpen]);
 
   useEffect(() => {
     if (!eventToOpenId) return;
@@ -3101,7 +3118,10 @@ function CalendarView({
           </select>
           <button
             className="rounded-full border border-line bg-paper px-4 py-2 text-sm font-semibold text-ink dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
-            onClick={() => setExportModalOpen(true)}
+            onClick={() => {
+              setExportGroupId(calendarGroupId);
+              setExportModalOpen(true);
+            }}
             type="button"
           >
             Export
@@ -3170,7 +3190,7 @@ function CalendarView({
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold">Export calendar</h2>
-                <p className="mt-1 text-sm text-ink/60 dark:text-paper/55">{exportLabel} · {exportEvents.length} of {events.length} event{events.length === 1 ? "" : "s"}</p>
+                <p className="mt-1 text-sm text-ink/60 dark:text-paper/55">{exportLabel} · {exportEvents.length} of {exportBaseEvents.length} event{exportBaseEvents.length === 1 ? "" : "s"}</p>
               </div>
               <button
                 aria-label="Close export"
@@ -3181,7 +3201,23 @@ function CalendarView({
                 <X size={18} />
               </button>
             </div>
-            <div className="mb-4 grid grid-cols-2 gap-2">
+            <div className="mb-4 grid gap-2">
+              <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-ink/45 dark:text-paper/40">
+                Group
+                <select
+                  className="min-w-0 rounded-xl border border-line bg-paper px-3 py-2 text-sm font-semibold normal-case tracking-normal text-ink outline-none dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+                  onChange={(event) => setExportGroupId(event.target.value)}
+                  value={exportGroupId}
+                >
+                  <option value="all">All groups</option>
+                  {groups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
               <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-ink/45 dark:text-paper/40">
                 From
                 <input
@@ -3200,9 +3236,10 @@ function CalendarView({
                   value={exportEndDate}
                 />
               </label>
+              </div>
               {exportStartDate || exportEndDate ? (
                 <button
-                  className="col-span-2 justify-self-start text-sm font-semibold text-ink/55 dark:text-paper/55"
+                  className="justify-self-start text-sm font-semibold text-ink/55 dark:text-paper/55"
                   onClick={() => {
                     setExportStartDate("");
                     setExportEndDate("");
@@ -4098,27 +4135,60 @@ function AuthVisual() {
         <div className="rounded-lg border border-white/70 bg-white/80 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-ink/45 dark:text-paper/45">Today</p>
-              <h3 className="mt-1 text-xl font-semibold">Family gallery</h3>
+              <p className="text-xs uppercase tracking-[0.18em] text-ink/45 dark:text-paper/45">Preview</p>
+              <h3 className="mt-1 text-xl font-semibold">What Connection does</h3>
             </div>
-            <div className="grid h-10 w-10 place-items-center rounded-full bg-skysoft text-ink">
-              <Camera size={18} />
+            <div className="grid h-10 w-10 place-items-center rounded-full bg-skysoft text-ink dark:bg-[#153141] dark:text-[#8ed8f5]">
+              <Bell size={18} />
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            {Array.from({ length: 6 }, (_, index) => (
-              <div
-                key={index}
-                className="aspect-square bg-[radial-gradient(circle_at_35%_35%,#f8f7f4_0,#c7c3ba_32%,#2b2b29_100%)]"
-              />
-            ))}
+          <div className="grid gap-3">
+            <div className="rounded-lg border border-line bg-paper/80 p-4 dark:border-white/10 dark:bg-[#1d1d1a]">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.18em] text-ink/45 dark:text-paper/40">Group</p>
+                  <h4 className="mt-1 text-2xl font-semibold">family</h4>
+                </div>
+                <div className="flex -space-x-2">
+                  <Avatar name="nurbulama" size="sm" />
+                  <Avatar name="pratikshya" size="sm" />
+                  <Avatar name="sangram" size="sm" />
+                </div>
+              </div>
+              <p className="mt-3 text-sm text-ink/60 dark:text-paper/55">Private photos and plans stay with the people in that group.</p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-[1fr_0.9fr]">
+              <div className="rounded-lg border border-line bg-paper/80 p-4 dark:border-white/10 dark:bg-[#1d1d1a]">
+                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink/65 dark:text-paper/60">
+                  <CalendarDays size={16} />
+                  Aug / let's make it count
+                </div>
+                <div className="rounded-lg bg-sage/25 p-3 dark:bg-sage/20">
+                  <p className="text-sm font-semibold">Call Dad</p>
+                  <p className="mt-1 text-xs text-ink/60 dark:text-paper/55">Your time: 2:15 AM</p>
+                  <p className="text-xs text-ink/45 dark:text-paper/40">Entered as: 12:00 PM · Nepal</p>
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-line bg-paper/80 p-4 dark:border-white/10 dark:bg-[#1d1d1a]">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold">us</p>
+                    <p className="mt-1 text-xs uppercase tracking-[0.18em] text-ink/40 dark:text-paper/35">Just now</p>
+                  </div>
+                  <span className="h-2 w-2 rounded-full bg-rust" />
+                </div>
+                <p className="mt-4 text-sm leading-5 text-ink/65 dark:text-paper/60">pratikshya added dinner in us.</p>
+              </div>
+            </div>
           </div>
         </div>
 
         <div className="mt-4 flex items-center gap-3 text-sm text-ink/60 dark:text-paper/60">
           <span className="h-px flex-1 bg-line dark:bg-white/15" />
-          Photos now, plans when the group needs them
+          Photos, groups, plans, and the tiny updates that matter
           <span className="h-px flex-1 bg-line dark:bg-white/15" />
         </div>
       </div>
@@ -4267,7 +4337,7 @@ function AccountMenu({
     const { error } = await supabase.from("profiles").update({ avatar_url: publicUrl }).eq("id", profile.id);
 
     if (error) {
-      setMessage(error.message);
+      setMessage(profileErrorMessage(error));
     } else {
       setAvatarUrl(publicUrl);
       await reload();
