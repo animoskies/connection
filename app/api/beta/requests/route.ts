@@ -32,6 +32,15 @@ function betaAdminUsernames() {
     .filter(Boolean);
 }
 
+function appUrl(request: NextRequest, path = "/") {
+  const base =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
+    request.nextUrl.origin;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${base}${normalizedPath}`;
+}
+
 async function currentAdminId(request: NextRequest) {
   const routeClient = createSupabaseRouteClient(request.headers.get("authorization"));
   const serviceClient = createSupabaseServiceClient();
@@ -161,8 +170,19 @@ export async function PATCH(request: NextRequest) {
 
   await serviceClient.from("beta_requests").update({ approved_at: now, approved_by: adminId }).eq("email", email);
 
+  const { error: inviteError } = await serviceClient.auth.admin.inviteUserByEmail(email, {
+    redirectTo: appUrl(request, "/")
+  });
+
+  if (inviteError) {
+    return NextResponse.json(
+      { error: `Beta approved, but Supabase could not send the email. ${inviteError.message}` },
+      { status: 400 }
+    );
+  }
+
   return NextResponse.json({
     approved: true,
-    approvalEmailSkipped: true
+    approvalEmailSent: true
   });
 }

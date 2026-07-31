@@ -388,6 +388,8 @@ function isTransientMessage(message: string) {
     "Beta link copied.",
     "Beta access requested.",
     "Beta request approved.",
+    "Beta request approved. Invite email sent.",
+    "Beta request sent. Please log in once approved via email.",
     "Connection request sent.",
     "Connection request accepted.",
     "Connection request declined.",
@@ -410,6 +412,7 @@ function isTransientMessage(message: string) {
     "Select and copy the link manually.",
     "Invite declined."
   ].includes(message) ||
+    message.startsWith("Beta request sent.") ||
     message.startsWith("Invite sent to ") ||
     message.startsWith("Joined ") ||
     message.startsWith("Only admin ") ||
@@ -1025,6 +1028,7 @@ export default function Home() {
   const [loading, setLoading] = useState(hasSupabaseConfig);
   const [profileChecked, setProfileChecked] = useState(false);
   const [message, setMessage] = useState("");
+  const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window === "undefined") return true;
     return localStorage.getItem("connection-dark-mode") !== "false";
@@ -1063,12 +1067,12 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!sessionUserId || !message || !isTransientMessage(message)) return;
+    if (!message || !isTransientMessage(message)) return;
     const timeout = window.setTimeout(() => {
       setMessage((currentMessage) => (currentMessage === message ? "" : currentMessage));
     }, 1800);
     return () => window.clearTimeout(timeout);
-  }, [message, sessionUserId]);
+  }, [message]);
 
   useEffect(() => {
     if (!notificationsOpen) return;
@@ -1181,8 +1185,10 @@ export default function Home() {
       const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ""));
       const accessToken = hashParams.get("access_token");
       const refreshToken = hashParams.get("refresh_token");
+      const authType = hashParams.get("type");
 
       if (accessToken && refreshToken) {
+        setNeedsPasswordSetup(authType === "invite");
         const { data, error } = await client.auth.setSession({
           access_token: accessToken,
           refresh_token: refreshToken
@@ -2214,7 +2220,11 @@ export default function Home() {
         userId={visibleUserId}
         setMessage={setMessage}
         message={message}
-        onComplete={() => loadWorkspace(visibleUserId)}
+        needsPasswordSetup={needsPasswordSetup}
+        onComplete={() => {
+          setNeedsPasswordSetup(false);
+          void loadWorkspace(visibleUserId);
+        }}
       />
     );
   }
@@ -4146,7 +4156,7 @@ function AuthScreen({ message, setMessage }: { message: string; setMessage: (val
           body: JSON.stringify({ email: cleanedEmail })
         });
         const requestPayload = await requestResponse.json().catch(() => ({}));
-        setMessage(requestResponse.ok ? "Beta request sent. You can register after approval." : requestPayload.error ?? "Could not request beta access.");
+        setMessage(requestResponse.ok ? "Beta request sent. Please log in once approved via email." : requestPayload.error ?? "Could not request beta access.");
         setBusy(false);
         return;
       }
@@ -4329,27 +4339,41 @@ function ProfileSetup({
   userId,
   message,
   setMessage,
+  needsPasswordSetup,
   onComplete
 }: {
   userId: string;
   message: string;
   setMessage: (value: string) => void;
+  needsPasswordSetup: boolean;
   onComplete: () => void;
 }) {
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [timezone, setTimezone] = useState(browserTimezone());
+  const [password, setPassword] = useState("");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!supabase) return;
     setMessage("");
+    if (needsPasswordSetup && password.length < 8) {
+      setMessage("Password must be at least 8 characters.");
+      return;
+    }
     const cleanedUsername = normalizeUsername(username);
     const validationMessage = usernameError(cleanedUsername);
     if (validationMessage) {
       setUsername(cleanedUsername);
       setMessage(validationMessage);
       return;
+    }
+    if (needsPasswordSetup) {
+      const { error: passwordError } = await supabase.auth.updateUser({ password });
+      if (passwordError) {
+        setMessage(passwordError.message);
+        return;
+      }
     }
     const { error } = await supabase.from("profiles").insert({
       id: userId,
@@ -4379,6 +4403,9 @@ function ProfileSetup({
         <form className="mt-5 flex flex-col gap-3" onSubmit={submit}>
           <Field label="Username" value={username} onChange={(value) => setUsername(normalizeUsername(value))} required />
           <Field label="Display name" value={displayName} onChange={setDisplayName} required />
+          {needsPasswordSetup ? (
+            <Field label="Set password" value={password} onChange={setPassword} required type="password" />
+          ) : null}
           <SelectField label="Preferred timezone" value={timezone} onChange={setTimezone} />
           {message ? <p className="text-sm text-rust dark:text-[#ffb49a]">{message}</p> : null}
           <button className="rounded-full bg-ink px-4 py-3 font-medium text-paper dark:bg-paper dark:text-ink">
@@ -4472,7 +4499,7 @@ function AccountMenu({
       setMessage(payload.error ?? "Could not approve beta request.");
     } else {
       setBetaRequests((current) => current?.filter((request) => request.email !== email) ?? null);
-      setMessage("Beta request approved. They can register now.");
+      setMessage("Beta request approved. Invite email sent.");
     }
     setBusy(false);
   }
