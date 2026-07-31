@@ -211,9 +211,22 @@ create table if not exists public.photos (
 alter table public.photos
   add column if not exists share_scope public.photo_share_scope not null default 'private';
 
+create table if not exists public.photo_shares (
+  id uuid primary key default gen_random_uuid(),
+  photo_id uuid not null references public.photos(id) on delete cascade,
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  token text not null unique default replace(gen_random_uuid()::text, '-', ''),
+  expires_at timestamptz,
+  revoked_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
 create index if not exists photos_owner_id_idx on public.photos(owner_id);
 create index if not exists photos_group_id_idx on public.photos(group_id);
 create index if not exists photos_taken_at_idx on public.photos(taken_at desc);
+create index if not exists photo_shares_photo_id_idx on public.photo_shares(photo_id);
+create index if not exists photo_shares_owner_id_idx on public.photo_shares(owner_id);
+create index if not exists photo_shares_token_idx on public.photo_shares(token);
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('connection-photos', 'connection-photos', false, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
@@ -1019,6 +1032,7 @@ alter table public.connection_notifications enable row level security;
 alter table public.connections enable row level security;
 alter table public.events enable row level security;
 alter table public.photos enable row level security;
+alter table public.photo_shares enable row level security;
 
 drop policy if exists "Profiles are visible to signed in users" on public.profiles;
 drop policy if exists "Users can insert their own profile" on public.profiles;
@@ -1050,6 +1064,9 @@ drop policy if exists "Members can read photos" on public.photos;
 drop policy if exists "Members can create photos" on public.photos;
 drop policy if exists "Owners can update their photos" on public.photos;
 drop policy if exists "Owners can delete their photos" on public.photos;
+drop policy if exists "Owners can read their photo shares" on public.photo_shares;
+drop policy if exists "Owners can create photo shares" on public.photo_shares;
+drop policy if exists "Owners can revoke photo shares" on public.photo_shares;
 drop policy if exists "Photo objects can be read by visible members" on storage.objects;
 drop policy if exists "Users can upload their own photo objects" on storage.objects;
 drop policy if exists "Users can update their own photo objects" on storage.objects;
@@ -1271,6 +1288,30 @@ create policy "Owners can delete their photos"
   on public.photos for delete
   to authenticated
   using (owner_id = auth.uid());
+
+create policy "Owners can read their photo shares"
+  on public.photo_shares for select
+  to authenticated
+  using (owner_id = auth.uid());
+
+create policy "Owners can create photo shares"
+  on public.photo_shares for insert
+  to authenticated
+  with check (
+    owner_id = auth.uid()
+    and exists (
+      select 1
+      from public.photos p
+      where p.id = photo_shares.photo_id
+        and p.owner_id = auth.uid()
+    )
+  );
+
+create policy "Owners can revoke photo shares"
+  on public.photo_shares for update
+  to authenticated
+  using (owner_id = auth.uid())
+  with check (owner_id = auth.uid());
 
 create policy "Photo objects can be read by visible members"
   on storage.objects for select

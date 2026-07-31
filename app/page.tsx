@@ -23,6 +23,7 @@ import {
   Search,
   Send,
   Settings,
+  Share2,
   Shield,
   Sun,
   Trash2,
@@ -359,6 +360,7 @@ function isTransientMessage(message: string) {
     "Photo saved to group successfully.",
     "Photo saved to connections successfully.",
     "Photo deleted successfully.",
+    "Photo share link copied.",
     "Connection request sent.",
     "Connection request accepted.",
     "Connection request declined.",
@@ -371,6 +373,7 @@ function isTransientMessage(message: string) {
     "Calendar event added successfully.",
     "Calendar event updated successfully.",
     "Calendar event deleted successfully.",
+    "Calendar exported.",
     "Profile picture updated.",
     "Account settings updated.",
     "Dark mode on.",
@@ -561,10 +564,19 @@ function wrapPdfText(value: string, maxChars: number) {
   return lines.length ? lines : [""];
 }
 
-function buildSimplePdf(lines: { text: string; size?: number; bold?: boolean; gap?: number }[]) {
+type PdfLine = {
+  text: string;
+  size?: number;
+  bold?: boolean;
+  gap?: number;
+  kind?: "pill";
+};
+
+function buildSimplePdf(lines: PdfLine[]) {
   const pageWidth = 612;
   const pageHeight = 792;
   const margin = 48;
+  const contentWidth = pageWidth - margin * 2;
   const pages: string[] = [];
   let y = pageHeight - margin;
   let content = "";
@@ -579,8 +591,16 @@ function buildSimplePdf(lines: { text: string; size?: number; bold?: boolean; ga
     const size = line.size ?? 11;
     const gap = line.gap ?? Math.ceil(size * 1.45);
     if (y < margin + gap) pushPage();
-    content += `BT /${line.bold ? "F2" : "F1"} ${size} Tf ${margin} ${y} Td (${pdfEscape(line.text)}) Tj ET\n`;
-    y -= gap;
+    if (line.kind === "pill") {
+      const pillHeight = 30;
+      if (y < margin + pillHeight + 8) pushPage();
+      content += `q 0.90 0.93 0.86 rg ${margin} ${y - pillHeight + 7} ${contentWidth} ${pillHeight} re f Q\n`;
+      content += `BT /F2 ${size} Tf ${margin + 12} ${y - 12} Td (${pdfEscape(line.text)}) Tj ET\n`;
+      y -= gap;
+    } else {
+      content += `BT /${line.bold ? "F2" : "F1"} ${size} Tf ${margin} ${y} Td (${pdfEscape(line.text)}) Tj ET\n`;
+      y -= gap;
+    }
   }
   pushPage();
 
@@ -617,19 +637,22 @@ function downloadCalendarPdf({
   groups,
   label,
   profile,
+  rangeLabel,
   timezone
 }: {
   events: EventItem[];
   groups: Group[];
   label: string;
   profile: Profile;
+  rangeLabel: string;
   timezone: string;
 }) {
   const groupNames = new Map(groups.map((group) => [group.id, group.name]));
-  const lines: { text: string; size?: number; bold?: boolean; gap?: number }[] = [
+  const lines: PdfLine[] = [
     { text: "Connection", size: 24, bold: true, gap: 30 },
     { text: `@${profile.username} calendar export`, size: 12, gap: 18 },
     { text: `Selection: ${label}`, size: 12, gap: 18 },
+    { text: `Range: ${rangeLabel}`, size: 12, gap: 18 },
     { text: `Generated: ${DateTime.now().setZone(timezone).toFormat("LLL d, yyyy h:mm a ZZZZ")}`, size: 10, gap: 28 },
     { text: events.length ? `${events.length} event${events.length === 1 ? "" : "s"}` : "No events in this selection", size: 14, bold: true, gap: 24 }
   ];
@@ -640,9 +663,9 @@ function downloadCalendarPdf({
     .forEach((event) => {
       const local = localDateTime(event, timezone);
       const entered = sourceDateTime(event);
-      lines.push({ text: event.title, size: 16, bold: true, gap: 20 });
-      lines.push({ text: `${local.toFormat("ccc, LLL d, yyyy h:mm a")} (${timezone})`, size: 11, gap: 16 });
+      lines.push({ text: `${event.title} - ${local.toFormat("ccc, LLL d, yyyy h:mm a")}`, size: 12, bold: true, gap: 36, kind: "pill" });
       lines.push({ text: `Group: ${groupNames.get(event.group_id) ?? "Group"}`, size: 11, gap: 16 });
+      lines.push({ text: `Your time: ${local.toFormat("ccc, LLL d, yyyy h:mm a")} (${timezone})`, size: 11, gap: 16 });
       if (event.location) lines.push({ text: `Location: ${event.location}`, size: 11, gap: 16 });
       if (event.reference) lines.push({ text: `Reference: ${referenceHref(event.reference)}`, size: 11, gap: 16 });
       lines.push({ text: `Entered as: ${entered.toFormat("ccc, LLL d, yyyy h:mm a")} (${event.source_timezone})`, size: 10, gap: 16 });
@@ -2023,6 +2046,25 @@ export default function Home() {
     setMessage("Caption saved.");
   }
 
+  async function copyPhotoShareLink(photo: PhotoItem) {
+    const headers = await authHeaders();
+    if (!headers) return;
+
+    const response = await fetch(`/api/photos/${photo.id}/share`, {
+      method: "POST",
+      headers
+    });
+    const payload = await response.json();
+
+    if (!response.ok || !payload.url) {
+      setMessage(`Could not create share link. ${payload.error ?? "Please try again."}`);
+      return;
+    }
+
+    const copied = await copyText(payload.url);
+    setMessage(copied ? "Photo share link copied." : "Could not copy share link. Try again.");
+  }
+
   const activeGroup = groups.find((group) => group.id === activeGroupId) ?? null;
   const allPhotos = photos;
   const myPhotos = profile ? photos.filter((photo) => photo.ownerId === profile.id) : [];
@@ -2352,6 +2394,7 @@ export default function Home() {
           onOpenOwner={openPhotoOwner}
           onDelete={deletePhoto}
           onEditCaption={updatePhotoCaption}
+          onShare={copyPhotoShareLink}
           onExitContext={() => {
             setSelectedPhotoId(null);
             if (activeTab === "connections") {
@@ -2874,10 +2917,24 @@ function CalendarView({
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [eventModalOpen, setEventModalOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportStartDate, setExportStartDate] = useState("");
+  const [exportEndDate, setExportEndDate] = useState("");
   const [eventGroupId, setEventGroupId] = useState(writableGroup?.id ?? "");
   const editingEvent = editingEventId ? events.find((event) => event.id === editingEventId) ?? null : null;
   const editableGroups = groups.filter((group) => group.role === "owner" || group.role === "editor");
   const exportLabel = calendarGroup?.name ?? "All groups";
+  const exportStart = exportStartDate ? DateTime.fromISO(exportStartDate, { zone: timezone }).startOf("day") : null;
+  const exportEnd = exportEndDate ? DateTime.fromISO(exportEndDate, { zone: timezone }).endOf("day") : null;
+  const exportEvents = events.filter((event) => {
+    const eventTime = localDateTime(event, timezone);
+    if (exportStart?.isValid && eventTime.toMillis() < exportStart.toMillis()) return false;
+    if (exportEnd?.isValid && eventTime.toMillis() > exportEnd.toMillis()) return false;
+    return true;
+  });
+  const exportRangeLabel =
+    exportStartDate || exportEndDate
+      ? `${exportStartDate ? DateTime.fromISO(exportStartDate).toFormat("LLL d, yyyy") : "Start"} to ${exportEndDate ? DateTime.fromISO(exportEndDate).toFormat("LLL d, yyyy") : "End"}`
+      : "All dates";
   const formGroup =
     groups.find((group) => group.id === eventGroupId) ??
     (editingEvent ? groups.find((group) => group.id === editingEvent.group_id) : null) ??
@@ -2915,13 +2972,13 @@ function CalendarView({
   }
 
   function exportIcs() {
-    downloadCalendarIcs(events, `connection-${exportLabel}`);
+    downloadCalendarIcs(exportEvents, `connection-${exportLabel}-${exportRangeLabel}`);
     setExportModalOpen(false);
     setMessage("Calendar exported.");
   }
 
   function exportPdf() {
-    downloadCalendarPdf({ events, groups, label: exportLabel, profile, timezone });
+    downloadCalendarPdf({ events: exportEvents, groups, label: exportLabel, profile, rangeLabel: exportRangeLabel, timezone });
     setExportModalOpen(false);
     setMessage("Calendar exported.");
   }
@@ -3058,7 +3115,7 @@ function CalendarView({
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold">Export calendar</h2>
-                <p className="mt-1 text-sm text-ink/60 dark:text-paper/55">{exportLabel} · {events.length} event{events.length === 1 ? "" : "s"}</p>
+                <p className="mt-1 text-sm text-ink/60 dark:text-paper/55">{exportLabel} · {exportEvents.length} of {events.length} event{events.length === 1 ? "" : "s"}</p>
               </div>
               <button
                 aria-label="Close export"
@@ -3068,6 +3125,38 @@ function CalendarView({
               >
                 <X size={18} />
               </button>
+            </div>
+            <div className="mb-4 grid grid-cols-2 gap-2">
+              <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-ink/45 dark:text-paper/40">
+                From
+                <input
+                  className="min-w-0 rounded-xl border border-line bg-paper px-3 py-2 text-sm font-semibold normal-case tracking-normal text-ink outline-none dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+                  onChange={(event) => setExportStartDate(event.target.value)}
+                  type="date"
+                  value={exportStartDate}
+                />
+              </label>
+              <label className="flex min-w-0 flex-col gap-1 text-xs font-semibold uppercase tracking-[0.18em] text-ink/45 dark:text-paper/40">
+                To
+                <input
+                  className="min-w-0 rounded-xl border border-line bg-paper px-3 py-2 text-sm font-semibold normal-case tracking-normal text-ink outline-none dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+                  onChange={(event) => setExportEndDate(event.target.value)}
+                  type="date"
+                  value={exportEndDate}
+                />
+              </label>
+              {exportStartDate || exportEndDate ? (
+                <button
+                  className="col-span-2 justify-self-start text-sm font-semibold text-ink/55 dark:text-paper/55"
+                  onClick={() => {
+                    setExportStartDate("");
+                    setExportEndDate("");
+                  }}
+                  type="button"
+                >
+                  Clear range
+                </button>
+              ) : null}
             </div>
             <div className="grid gap-2">
               <button
@@ -3204,6 +3293,7 @@ function PhotoViewer({
   onOpenOwner,
   onDelete,
   onEditCaption,
+  onShare,
   onExitContext,
   photo,
   photos,
@@ -3215,6 +3305,7 @@ function PhotoViewer({
   onOpenOwner: (photo: PhotoItem) => void;
   onDelete: (photo: PhotoItem) => void;
   onEditCaption: (photo: PhotoItem, caption: string) => Promise<void>;
+  onShare: (photo: PhotoItem) => Promise<void>;
   onExitContext: () => void;
   photo: PhotoItem;
   photos: PhotoItem[];
@@ -3291,16 +3382,26 @@ function PhotoViewer({
         </button>
         <p className="text-sm font-semibold">{currentIndex + 1} / {photos.length}</p>
         {canDelete ? (
-          <button
-            aria-label="Delete photo"
-            className="grid h-9 w-9 place-items-center"
-            onClick={() => onDelete(photo)}
-            type="button"
-          >
-            <Trash2 size={18} />
-          </button>
+          <div className="flex h-9 items-center justify-end gap-1">
+            <button
+              aria-label="Copy public share link"
+              className="grid h-9 w-9 place-items-center"
+              onClick={() => void onShare(photo)}
+              type="button"
+            >
+              <Share2 size={18} />
+            </button>
+            <button
+              aria-label="Delete photo"
+              className="grid h-9 w-9 place-items-center"
+              onClick={() => onDelete(photo)}
+              type="button"
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
         ) : (
-          <span aria-hidden="true" className="h-9 w-9" />
+          <span aria-hidden="true" className="h-9 w-[4.75rem]" />
         )}
       </div>
       <div
@@ -5062,7 +5163,7 @@ function CalendarSurface({
                 onClick={() => moveMonth(1)}
                 type="button"
               >
-                {selected.toFormat("LLLL")}
+                {selected.toFormat("LLL")}
               </button>
               <button
                 aria-label="Next month"
@@ -5074,7 +5175,7 @@ function CalendarSurface({
               </button>
             </div>
           ) : (
-            <span>{selected.toFormat("LLLL")}</span>
+            <span>{selected.toFormat("LLL")}</span>
           )}
           <span className="text-ink/35 dark:text-paper/35">/</span>
           <span>let&apos;s make it count</span>
