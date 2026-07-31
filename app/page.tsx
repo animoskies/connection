@@ -4091,8 +4091,17 @@ function AboutConnectionModal({
           <p className="text-xs uppercase tracking-[0.18em] text-ink/45 dark:text-paper/40">Early preview build</p>
         </div>
 
+        <a
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-line px-4 py-3 text-sm font-semibold text-ink transition hover:-translate-y-0.5 dark:border-white/15 dark:text-paper"
+          href="/beta"
+          onClick={onClose}
+        >
+          <Info size={15} />
+          What this is + what&apos;s next
+        </a>
+
         <button
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 dark:bg-paper dark:text-ink"
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 dark:bg-paper dark:text-ink"
           onClick={onCopyBetaLink}
           type="button"
         >
