@@ -591,6 +591,7 @@ type PdfLine = {
   bold?: boolean;
   gap?: number;
   kind?: "pill";
+  maxChars?: number;
 };
 
 function buildSimplePdf(lines: PdfLine[]) {
@@ -611,16 +612,23 @@ function buildSimplePdf(lines: PdfLine[]) {
   for (const line of lines) {
     const size = line.size ?? 11;
     const gap = line.gap ?? Math.ceil(size * 1.45);
-    if (y < margin + gap) pushPage();
+    const wrappedLines = line.maxChars ? wrapPdfText(line.text, line.maxChars) : [line.text];
     if (line.kind === "pill") {
-      const pillHeight = 30;
+      const lineHeight = Math.ceil(size * 1.35);
+      const pillHeight = 16 + wrappedLines.length * lineHeight;
       if (y < margin + pillHeight + 8) pushPage();
       content += `q 0.90 0.93 0.86 rg ${margin} ${y - pillHeight + 7} ${contentWidth} ${pillHeight} re f Q\n`;
-      content += `BT /F2 ${size} Tf ${margin} ${y - 12} Td (${pdfEscape(line.text)}) Tj ET\n`;
-      y -= gap;
+      wrappedLines.forEach((text, index) => {
+        content += `BT /F2 ${size} Tf ${margin} ${y - 12 - index * lineHeight} Td (${pdfEscape(text)}) Tj ET\n`;
+      });
+      y -= pillHeight + 12;
     } else {
-      content += `BT /${line.bold ? "F2" : "F1"} ${size} Tf ${margin} ${y} Td (${pdfEscape(line.text)}) Tj ET\n`;
-      y -= gap;
+      const lineHeight = Math.ceil(size * 1.35);
+      if (y < margin + wrappedLines.length * lineHeight) pushPage();
+      wrappedLines.forEach((text, index) => {
+        content += `BT /${line.bold ? "F2" : "F1"} ${size} Tf ${margin} ${y - index * lineHeight} Td (${pdfEscape(text)}) Tj ET\n`;
+      });
+      y -= wrappedLines.length > 1 ? wrappedLines.length * lineHeight + 4 : gap;
     }
   }
   pushPage();
@@ -684,12 +692,19 @@ function downloadCalendarPdf({
     .forEach((event) => {
       const local = localDateTime(event, timezone);
       const entered = sourceDateTime(event);
-      lines.push({ text: `${event.title} - ${local.toFormat("ccc, LLL d, yyyy h:mm a")}`, size: 12, bold: true, gap: 36, kind: "pill" });
-      lines.push({ text: `Group: ${groupNames.get(event.group_id) ?? "Group"}`, size: 11, gap: 16 });
-      lines.push({ text: `Your time: ${local.toFormat("ccc, LLL d, yyyy h:mm a")} (${timezone})`, size: 11, gap: 16 });
-      if (event.location) lines.push({ text: `Location: ${event.location}`, size: 11, gap: 16 });
-      if (event.reference) lines.push({ text: `Reference: ${referenceHref(event.reference)}`, size: 11, gap: 16 });
-      lines.push({ text: `Entered as: ${entered.toFormat("ccc, LLL d, yyyy h:mm a")} (${event.source_timezone})`, size: 10, gap: 16 });
+      lines.push({
+        text: `${event.title} - ${local.toFormat("ccc, LLL d, yyyy h:mm a")}`,
+        size: 12,
+        bold: true,
+        gap: 36,
+        kind: "pill",
+        maxChars: 72
+      });
+      lines.push({ text: `Group: ${groupNames.get(event.group_id) ?? "Group"}`, size: 11, gap: 16, maxChars: 84 });
+      lines.push({ text: `Your time: ${local.toFormat("ccc, LLL d, yyyy h:mm a")} (${timezone})`, size: 11, gap: 16, maxChars: 84 });
+      if (event.location) lines.push({ text: `Location: ${event.location}`, size: 11, gap: 16, maxChars: 84 });
+      if (event.reference) lines.push({ text: `Reference: ${referenceHref(event.reference)}`, size: 11, gap: 16, maxChars: 84 });
+      lines.push({ text: `Entered as: ${entered.toFormat("ccc, LLL d, yyyy h:mm a")} (${event.source_timezone})`, size: 10, gap: 16, maxChars: 92 });
       if (event.description) {
         wrapPdfText(event.description, 78).forEach((line) => lines.push({ text: line, size: 11, gap: 15 }));
       }
