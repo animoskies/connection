@@ -25,6 +25,38 @@ function betaAdminUsernames() {
     .filter(Boolean);
 }
 
+function appOrigin(request: NextRequest) {
+  return (
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
+    request.nextUrl.origin
+  );
+}
+
+async function sendApprovalEmail(
+  serviceClient: ReturnType<typeof createSupabaseServiceClient>,
+  email: string,
+  request: NextRequest
+) {
+  try {
+    const { error } = await serviceClient.auth.admin.inviteUserByEmail(email, {
+      redirectTo: appOrigin(request)
+    });
+
+    if (!error) return { sent: true };
+
+    const message = error.message.toLowerCase();
+    if (message.includes("already") && message.includes("registered")) {
+      return { sent: false, skipped: true, error: error.message };
+    }
+
+    return { sent: false, error: error.message };
+  } catch (error) {
+    return { sent: false, error: error instanceof Error ? error.message : "Could not send approval email." };
+  }
+}
+
 async function currentAdminId(request: NextRequest) {
   const routeClient = createSupabaseRouteClient(request.headers.get("authorization"));
   const serviceClient = createSupabaseServiceClient();
@@ -138,6 +170,12 @@ export async function PATCH(request: NextRequest) {
   if (accessError) return NextResponse.json({ error: accessError.message }, { status: 400 });
 
   await serviceClient.from("beta_requests").update({ approved_at: now, approved_by: adminId }).eq("email", email);
+  const approvalEmail = await sendApprovalEmail(serviceClient, email, request);
 
-  return NextResponse.json({ approved: true });
+  return NextResponse.json({
+    approved: true,
+    approvalEmailSent: approvalEmail.sent,
+    approvalEmailSkipped: Boolean(approvalEmail.skipped),
+    approvalEmailError: approvalEmail.sent || approvalEmail.skipped ? null : approvalEmail.error
+  });
 }

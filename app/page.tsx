@@ -4461,7 +4461,13 @@ function AccountMenu({
       setMessage(payload.error ?? "Could not approve beta request.");
     } else {
       setBetaRequests((current) => current?.filter((request) => request.email !== email) ?? null);
-      setMessage("Beta request approved.");
+      setMessage(
+        payload.approvalEmailSent
+          ? "Beta request approved. Email sent."
+          : payload.approvalEmailSkipped
+            ? "Beta request approved."
+            : "Beta request approved. Email could not be sent."
+      );
     }
     setBusy(false);
   }
