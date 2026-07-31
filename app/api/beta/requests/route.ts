@@ -8,6 +8,13 @@ type BetaRequestRow = {
   approved_at: string | null;
 };
 
+type BetaUserRow = {
+  id: string;
+  email?: string;
+  created_at: string;
+  last_sign_in_at?: string | null;
+};
+
 const defaultAdminUsernames = ["animoskies"];
 
 function normalizeEmail(value: unknown) {
@@ -23,38 +30,6 @@ function betaAdminUsernames() {
     .split(",")
     .map((item) => item.trim().toLowerCase())
     .filter(Boolean);
-}
-
-function appOrigin(request: NextRequest) {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
-    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "") ||
-    request.nextUrl.origin
-  );
-}
-
-async function sendApprovalEmail(
-  serviceClient: ReturnType<typeof createSupabaseServiceClient>,
-  email: string,
-  request: NextRequest
-) {
-  try {
-    const { error } = await serviceClient.auth.admin.inviteUserByEmail(email, {
-      redirectTo: appOrigin(request)
-    });
-
-    if (!error) return { sent: true };
-
-    const message = error.message.toLowerCase();
-    if (message.includes("already") && message.includes("registered")) {
-      return { sent: false, skipped: true, error: error.message };
-    }
-
-    return { sent: false, error: error.message };
-  } catch (error) {
-    return { sent: false, error: error instanceof Error ? error.message : "Could not send approval email." };
-  }
 }
 
 async function currentAdminId(request: NextRequest) {
@@ -108,12 +83,27 @@ export async function GET(request: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
+  const { data: userList, error: userError } = await serviceClient.auth.admin.listUsers({
+    page: 1,
+    perPage: 100
+  });
+
+  if (userError) return NextResponse.json({ error: userError.message }, { status: 400 });
+
   return NextResponse.json({
     requests: ((data ?? []) as BetaRequestRow[]).map((requestRow) => ({
       email: requestRow.email,
       requestedAt: requestRow.requested_at,
       approvedAt: requestRow.approved_at
-    }))
+    })),
+    users: ((userList.users ?? []) as BetaUserRow[])
+      .filter((user) => Boolean(user.email))
+      .map((user) => ({
+        id: user.id,
+        email: user.email,
+        createdAt: user.created_at,
+        lastSignInAt: user.last_sign_in_at ?? null
+      }))
   });
 }
 
@@ -170,12 +160,9 @@ export async function PATCH(request: NextRequest) {
   if (accessError) return NextResponse.json({ error: accessError.message }, { status: 400 });
 
   await serviceClient.from("beta_requests").update({ approved_at: now, approved_by: adminId }).eq("email", email);
-  const approvalEmail = await sendApprovalEmail(serviceClient, email, request);
 
   return NextResponse.json({
     approved: true,
-    approvalEmailSent: approvalEmail.sent,
-    approvalEmailSkipped: Boolean(approvalEmail.skipped),
-    approvalEmailError: approvalEmail.sent || approvalEmail.skipped ? null : approvalEmail.error
+    approvalEmailSkipped: true
   });
 }

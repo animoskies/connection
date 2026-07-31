@@ -201,6 +201,13 @@ type BetaRequest = {
   approvedAt: string | null;
 };
 
+type BetaUser = {
+  id: string;
+  email: string;
+  createdAt: string;
+  lastSignInAt: string | null;
+};
+
 type InvitePreview = {
   token: string;
   groupId: string;
@@ -4111,36 +4118,17 @@ function AboutConnectionModal({
 }
 
 function AuthScreen({ message, setMessage }: { message: string; setMessage: (value: string) => void }) {
-  const [mode, setMode] = useState<"signin" | "signup" | "request">("signin");
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!supabase && mode !== "request") return;
+    if (!supabase) return;
     setBusy(true);
     setMessage("");
     const cleanedEmail = email.trim().toLowerCase();
-
-    if (mode === "request") {
-      const response = await fetch("/api/beta/requests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: cleanedEmail })
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        setMessage(payload.error ?? "Could not request beta access.");
-      } else if (payload.approved) {
-        setMode("signup");
-        setMessage("Beta access approved. Create your account.");
-      } else {
-        setMessage("Beta access requested.");
-      }
-      setBusy(false);
-      return;
-    }
 
     const client = supabase;
     if (!client) {
@@ -4152,8 +4140,13 @@ function AuthScreen({ message, setMessage }: { message: string; setMessage: (val
       const response = await fetch(`/api/beta/requests?email=${encodeURIComponent(cleanedEmail)}`);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload.approved) {
-        setMode("request");
-        setMessage("Beta access needs approval first.");
+        const requestResponse = await fetch("/api/beta/requests", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: cleanedEmail })
+        });
+        const requestPayload = await requestResponse.json().catch(() => ({}));
+        setMessage(requestResponse.ok ? "Beta request sent. You can register after approval." : requestPayload.error ?? "Could not request beta access.");
         setBusy(false);
         return;
       }
@@ -4201,20 +4194,19 @@ function AuthScreen({ message, setMessage }: { message: string; setMessage: (val
               value={mode}
               options={[
                 ["signin", "Sign in"],
-                ["signup", "Create"],
-                ["request", "Request"]
+                ["signup", "Register"]
               ]}
-              onChange={(value) => setMode(value as "signin" | "signup" | "request")}
+              onChange={(value) => setMode(value as "signin" | "signup")}
             />
             <Field label="Email" type="email" value={email} onChange={setEmail} required />
-            {mode !== "request" ? <Field label="Password" type="password" value={password} onChange={setPassword} required /> : null}
+            <Field label="Password" type="password" value={password} onChange={setPassword} required />
             {message ? (
               <p className="rounded-md border border-rust/20 bg-rust/15 px-3 py-2 text-sm text-rust dark:text-[#ffb49a]">
                 {message}
               </p>
             ) : null}
             <button className="mt-2 rounded-full bg-ink px-4 py-3 font-medium text-paper shadow-sm transition hover:-translate-y-0.5 dark:bg-paper dark:text-ink">
-              {busy ? "Working..." : mode === "signup" ? "Create account" : mode === "request" ? "Request beta access" : "Sign in"}
+              {busy ? "Working..." : mode === "signup" ? "Register for beta" : "Sign in"}
             </button>
           </form>
         </div>
@@ -4347,8 +4339,6 @@ function ProfileSetup({
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [timezone, setTimezone] = useState(browserTimezone());
-  const [setupPassword, setSetupPassword] = useState("");
-  const [confirmSetupPassword, setConfirmSetupPassword] = useState("");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -4361,24 +4351,6 @@ function ProfileSetup({
       setMessage(validationMessage);
       return;
     }
-
-    const wantsPassword = setupPassword.length > 0 || confirmSetupPassword.length > 0;
-    if (wantsPassword) {
-      if (setupPassword.length < 6) {
-        setMessage("Password must be at least 6 characters.");
-        return;
-      }
-      if (setupPassword !== confirmSetupPassword) {
-        setMessage("Passwords do not match.");
-        return;
-      }
-      const { error: passwordError } = await supabase.auth.updateUser({ password: setupPassword });
-      if (passwordError) {
-        setMessage(passwordError.message);
-        return;
-      }
-    }
-
     const { error } = await supabase.from("profiles").insert({
       id: userId,
       username: cleanedUsername,
@@ -4408,21 +4380,6 @@ function ProfileSetup({
           <Field label="Username" value={username} onChange={(value) => setUsername(normalizeUsername(value))} required />
           <Field label="Display name" value={displayName} onChange={setDisplayName} required />
           <SelectField label="Preferred timezone" value={timezone} onChange={setTimezone} />
-          <div className="rounded-lg border border-line bg-paper/70 p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
-            <p className="text-sm font-semibold">Set a password</p>
-            <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">
-              If you arrived from a beta approval email, set this now so you can sign in again later.
-            </p>
-            <div className="mt-3 flex flex-col gap-3">
-              <Field label="Password" type="password" value={setupPassword} onChange={setSetupPassword} />
-              <Field
-                label="Confirm password"
-                type="password"
-                value={confirmSetupPassword}
-                onChange={setConfirmSetupPassword}
-              />
-            </div>
-          </div>
           {message ? <p className="text-sm text-rust dark:text-[#ffb49a]">{message}</p> : null}
           <button className="rounded-full bg-ink px-4 py-3 font-medium text-paper dark:bg-paper dark:text-ink">
             Continue
@@ -4472,6 +4429,8 @@ function AccountMenu({
   const [avatarUrl, setAvatarUrl] = useState(profile.avatar_url ?? "");
   const [busy, setBusy] = useState(false);
   const [betaRequests, setBetaRequests] = useState<BetaRequest[] | null>(null);
+  const [betaUsers, setBetaUsers] = useState<BetaUser[]>([]);
+  const [betaAdminOpen, setBetaAdminOpen] = useState(false);
 
   useEffect(() => {
     void loadBetaRequests();
@@ -4491,10 +4450,12 @@ function AccountMenu({
     const payload = await response.json().catch(() => ({}));
     if (response.status === 403) {
       setBetaRequests(null);
+      setBetaUsers([]);
       return;
     }
     if (!response.ok) return;
     setBetaRequests(payload.requests ?? []);
+    setBetaUsers(payload.users ?? []);
   }
 
   async function approveBetaRequest(email: string) {
@@ -4511,13 +4472,7 @@ function AccountMenu({
       setMessage(payload.error ?? "Could not approve beta request.");
     } else {
       setBetaRequests((current) => current?.filter((request) => request.email !== email) ?? null);
-      setMessage(
-        payload.approvalEmailSent
-          ? "Beta request approved. Email sent."
-          : payload.approvalEmailSkipped
-            ? "Beta request approved."
-            : "Beta request approved. Email could not be sent."
-      );
+      setMessage("Beta request approved. They can register now.");
     }
     setBusy(false);
   }
@@ -4667,46 +4622,16 @@ function AccountMenu({
       </form>
 
       {betaRequests !== null ? (
-        <section className="mt-4 rounded-xl border border-line p-3 dark:border-white/15">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#4aaad0] dark:text-[#8ed8f5]">Beta access</p>
-              <p className="mt-1 text-xs text-ink/55 dark:text-paper/55">
-                {betaRequests.length ? `${betaRequests.length} waiting` : "No pending requests"}
-              </p>
-            </div>
-            <button
-              className="rounded-full border border-line px-3 py-1.5 text-xs font-medium dark:border-white/15"
-              onClick={() => void loadBetaRequests()}
-              type="button"
-            >
-              Refresh
-            </button>
-          </div>
-          {betaRequests.length ? (
-            <div className="grid gap-2">
-              {betaRequests.map((request) => (
-                <div
-                  className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2 dark:border-white/10"
-                  key={request.email}
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold">{request.email}</p>
-                    <p className="text-xs text-ink/45 dark:text-paper/45">{notificationTime(request.requestedAt)}</p>
-                  </div>
-                  <button
-                    className="rounded-full bg-skysoft px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-50"
-                    disabled={busy}
-                    onClick={() => void approveBetaRequest(request.email)}
-                    type="button"
-                  >
-                    Approve
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </section>
+        <button
+          className="mt-4 flex w-full items-center justify-between rounded-full border border-line px-4 py-2.5 text-sm font-medium dark:border-white/15"
+          onClick={() => setBetaAdminOpen(true)}
+          type="button"
+        >
+          <span>Beta admin</span>
+          <span className="text-xs text-ink/50 dark:text-paper/50">
+            {betaRequests.length} waiting · {betaUsers.length} users
+          </span>
+        </button>
       ) : null}
 
       <button
@@ -4717,6 +4642,102 @@ function AccountMenu({
         <LogOut size={15} />
         Sign out
       </button>
+      {betaAdminOpen && betaRequests !== null ? (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center bg-black/25 px-3 pt-[calc(5.75rem+env(safe-area-inset-top))] backdrop-blur-sm dark:bg-black/55"
+          onClick={() => setBetaAdminOpen(false)}
+        >
+          <section
+            className="max-h-[calc(100vh-8rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-line bg-white p-4 shadow-soft dark:border-white/15 dark:bg-[#242420]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#4aaad0] dark:text-[#8ed8f5]">Beta admin</p>
+                <h2 className="mt-1 text-2xl font-semibold">Access</h2>
+                <p className="mt-1 text-xs text-ink/55 dark:text-paper/55">
+                  approve waiting emails and see who already joined
+                </p>
+              </div>
+              <button
+                className="grid h-9 w-9 place-items-center rounded-full border border-line dark:border-white/15"
+                onClick={() => setBetaAdminOpen(false)}
+                type="button"
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-line p-3 dark:border-white/15">
+              <div>
+                <p className="text-sm font-semibold">{betaRequests.length} waiting</p>
+                <p className="text-xs text-ink/50 dark:text-paper/50">{betaUsers.length} users in platform</p>
+              </div>
+              <button
+                className="rounded-full border border-line px-3 py-1.5 text-xs font-medium dark:border-white/15"
+                onClick={() => void loadBetaRequests()}
+                type="button"
+              >
+                Refresh
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              <section>
+                <h3 className="mb-2 text-sm font-semibold">Waiting approval</h3>
+                {betaRequests.length ? (
+                  <div className="grid gap-2">
+                    {betaRequests.map((request) => (
+                      <div
+                        className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2 dark:border-white/10"
+                        key={request.email}
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold">{request.email}</p>
+                          <p className="text-xs text-ink/45 dark:text-paper/45">{notificationTime(request.requestedAt)}</p>
+                        </div>
+                        <button
+                          className="rounded-full bg-skysoft px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-50"
+                          disabled={busy}
+                          onClick={() => void approveBetaRequest(request.email)}
+                          type="button"
+                        >
+                          Approve
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-lg border border-line px-3 py-3 text-sm text-ink/55 dark:border-white/10 dark:text-paper/55">
+                    no pending beta requests
+                  </p>
+                )}
+              </section>
+
+              <section>
+                <h3 className="mb-2 text-sm font-semibold">Already in platform</h3>
+                {betaUsers.length ? (
+                  <div className="grid gap-2">
+                    {betaUsers.map((user) => (
+                      <div className="rounded-lg border border-line px-3 py-2 dark:border-white/10" key={user.id}>
+                        <p className="truncate text-sm font-semibold">{user.email}</p>
+                        <p className="text-xs text-ink/45 dark:text-paper/45">
+                          joined {notificationTime(user.createdAt)}
+                          {user.lastSignInAt ? ` · active ${notificationTime(user.lastSignInAt)}` : ""}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="rounded-lg border border-line px-3 py-3 text-sm text-ink/55 dark:border-white/10 dark:text-paper/55">
+                    no users yet
+                  </p>
+                )}
+              </section>
+            </div>
+          </section>
+        </div>
+      ) : null}
       </section>
     </div>
   );
