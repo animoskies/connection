@@ -4332,6 +4332,8 @@ function ProfileSetup({
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [timezone, setTimezone] = useState(browserTimezone());
+  const [setupPassword, setSetupPassword] = useState("");
+  const [confirmSetupPassword, setConfirmSetupPassword] = useState("");
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -4344,6 +4346,24 @@ function ProfileSetup({
       setMessage(validationMessage);
       return;
     }
+
+    const wantsPassword = setupPassword.length > 0 || confirmSetupPassword.length > 0;
+    if (wantsPassword) {
+      if (setupPassword.length < 6) {
+        setMessage("Password must be at least 6 characters.");
+        return;
+      }
+      if (setupPassword !== confirmSetupPassword) {
+        setMessage("Passwords do not match.");
+        return;
+      }
+      const { error: passwordError } = await supabase.auth.updateUser({ password: setupPassword });
+      if (passwordError) {
+        setMessage(passwordError.message);
+        return;
+      }
+    }
+
     const { error } = await supabase.from("profiles").insert({
       id: userId,
       username: cleanedUsername,
@@ -4352,7 +4372,7 @@ function ProfileSetup({
     });
 
     if (error) {
-      setMessage(error.message);
+      setMessage(profileErrorMessage(error));
       return;
     }
 
@@ -4373,6 +4393,21 @@ function ProfileSetup({
           <Field label="Username" value={username} onChange={(value) => setUsername(normalizeUsername(value))} required />
           <Field label="Display name" value={displayName} onChange={setDisplayName} required />
           <SelectField label="Preferred timezone" value={timezone} onChange={setTimezone} />
+          <div className="rounded-lg border border-line bg-paper/70 p-3 dark:border-white/15 dark:bg-[#1d1d1a]">
+            <p className="text-sm font-semibold">Set a password</p>
+            <p className="mt-1 text-xs leading-5 text-ink/60 dark:text-paper/60">
+              If you arrived from a beta approval email, set this now so you can sign in again later.
+            </p>
+            <div className="mt-3 flex flex-col gap-3">
+              <Field label="Password" type="password" value={setupPassword} onChange={setSetupPassword} />
+              <Field
+                label="Confirm password"
+                type="password"
+                value={confirmSetupPassword}
+                onChange={setConfirmSetupPassword}
+              />
+            </div>
+          </div>
           {message ? <p className="text-sm text-rust dark:text-[#ffb49a]">{message}</p> : null}
           <button className="rounded-full bg-ink px-4 py-3 font-medium text-paper dark:bg-paper dark:text-ink">
             Continue
