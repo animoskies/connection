@@ -491,6 +491,178 @@ function downloadEventIcs(event: EventItem) {
   URL.revokeObjectURL(url);
 }
 
+function calendarEventIcs(event: EventItem) {
+  const start = DateTime.fromISO(event.starts_at_utc, { zone: "utc" });
+  const end = start.plus({ hours: 1 });
+  return [
+    "BEGIN:VEVENT",
+    `UID:${event.id}@connection`,
+    `DTSTAMP:${DateTime.utc().toFormat("yyyyLLdd'T'HHmmss'Z'")}`,
+    `DTSTART:${icsDate(event.starts_at_utc)}`,
+    `DTEND:${end.toFormat("yyyyLLdd'T'HHmmss'Z'")}`,
+    `SUMMARY:${icsEscape(event.title)}`,
+    event.description || event.reference
+      ? `DESCRIPTION:${icsEscape([event.description, event.reference ? `Reference: ${event.reference}` : ""].filter(Boolean).join("\n\n"))}`
+      : "",
+    event.location ? `LOCATION:${icsEscape(event.location)}` : "",
+    event.reference ? `URL:${icsEscape(referenceHref(event.reference))}` : "",
+    "END:VEVENT"
+  ].filter(Boolean).join("\r\n");
+}
+
+function downloadCalendarIcs(events: EventItem[], label: string) {
+  const ics = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Connection//Calendar Export//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    ...events.map(calendarEventIcs),
+    "END:VCALENDAR"
+  ].join("\r\n");
+
+  const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${slugify(label || "connection-calendar")}.ics`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function slugify(value: string) {
+  return value.trim().replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "connection";
+}
+
+function pdfEscape(value = "") {
+  return value
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function wrapPdfText(value: string, maxChars: number) {
+  const words = value.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > maxChars && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length ? lines : [""];
+}
+
+function buildSimplePdf(lines: { text: string; size?: number; bold?: boolean; gap?: number }[]) {
+  const pageWidth = 612;
+  const pageHeight = 792;
+  const margin = 48;
+  const pages: string[] = [];
+  let y = pageHeight - margin;
+  let content = "";
+
+  function pushPage() {
+    pages.push(content);
+    content = "";
+    y = pageHeight - margin;
+  }
+
+  for (const line of lines) {
+    const size = line.size ?? 11;
+    const gap = line.gap ?? Math.ceil(size * 1.45);
+    if (y < margin + gap) pushPage();
+    content += `BT /${line.bold ? "F2" : "F1"} ${size} Tf ${margin} ${y} Td (${pdfEscape(line.text)}) Tj ET\n`;
+    y -= gap;
+  }
+  pushPage();
+
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    `<< /Type /Pages /Kids [${pages.map((_, index) => `${5 + index * 2} 0 R`).join(" ")}] /Count ${pages.length} >>`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>"
+  ];
+
+  pages.forEach((page, index) => {
+    const contentObjectId = 6 + index * 2;
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentObjectId} 0 R >>`);
+    objects.push(`<< /Length ${page.length} >>\nstream\n${page}endstream`);
+  });
+
+  let body = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(body.length);
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    body += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  });
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return body;
+}
+
+function downloadCalendarPdf({
+  events,
+  groups,
+  label,
+  profile,
+  timezone
+}: {
+  events: EventItem[];
+  groups: Group[];
+  label: string;
+  profile: Profile;
+  timezone: string;
+}) {
+  const groupNames = new Map(groups.map((group) => [group.id, group.name]));
+  const lines: { text: string; size?: number; bold?: boolean; gap?: number }[] = [
+    { text: "Connection", size: 24, bold: true, gap: 30 },
+    { text: `@${profile.username} calendar export`, size: 12, gap: 18 },
+    { text: `Selection: ${label}`, size: 12, gap: 18 },
+    { text: `Generated: ${DateTime.now().setZone(timezone).toFormat("LLL d, yyyy h:mm a ZZZZ")}`, size: 10, gap: 28 },
+    { text: events.length ? `${events.length} event${events.length === 1 ? "" : "s"}` : "No events in this selection", size: 14, bold: true, gap: 24 }
+  ];
+
+  events
+    .slice()
+    .sort((first, second) => DateTime.fromISO(first.starts_at_utc).toMillis() - DateTime.fromISO(second.starts_at_utc).toMillis())
+    .forEach((event) => {
+      const local = localDateTime(event, timezone);
+      const entered = sourceDateTime(event);
+      lines.push({ text: event.title, size: 16, bold: true, gap: 20 });
+      lines.push({ text: `${local.toFormat("ccc, LLL d, yyyy h:mm a")} (${timezone})`, size: 11, gap: 16 });
+      lines.push({ text: `Group: ${groupNames.get(event.group_id) ?? "Group"}`, size: 11, gap: 16 });
+      if (event.location) lines.push({ text: `Location: ${event.location}`, size: 11, gap: 16 });
+      if (event.reference) lines.push({ text: `Reference: ${referenceHref(event.reference)}`, size: 11, gap: 16 });
+      lines.push({ text: `Entered as: ${entered.toFormat("ccc, LLL d, yyyy h:mm a")} (${event.source_timezone})`, size: 10, gap: 16 });
+      if (event.description) {
+        wrapPdfText(event.description, 78).forEach((line) => lines.push({ text: line, size: 11, gap: 15 }));
+      }
+      lines.push({ text: " ", gap: 18 });
+    });
+
+  const blob = new Blob([buildSimplePdf(lines)], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${slugify(label || "connection-calendar")}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function openGoogleCalendar(event: EventItem) {
   const start = DateTime.fromISO(event.starts_at_utc, { zone: "utc" });
   const end = start.plus({ hours: 1 });
@@ -2701,9 +2873,11 @@ function CalendarView({
   const writableGroup = calendarGroup ?? groups[0] ?? null;
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [eventModalOpen, setEventModalOpen] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
   const [eventGroupId, setEventGroupId] = useState(writableGroup?.id ?? "");
   const editingEvent = editingEventId ? events.find((event) => event.id === editingEventId) ?? null : null;
   const editableGroups = groups.filter((group) => group.role === "owner" || group.role === "editor");
+  const exportLabel = calendarGroup?.name ?? "All groups";
   const formGroup =
     groups.find((group) => group.id === eventGroupId) ??
     (editingEvent ? groups.find((group) => group.id === editingEvent.group_id) : null) ??
@@ -2738,6 +2912,18 @@ function CalendarView({
   function closeEventModal() {
     setEditingEventId(null);
     setEventModalOpen(false);
+  }
+
+  function exportIcs() {
+    downloadCalendarIcs(events, `connection-${exportLabel}`);
+    setExportModalOpen(false);
+    setMessage("Calendar exported.");
+  }
+
+  function exportPdf() {
+    downloadCalendarPdf({ events, groups, label: exportLabel, profile, timezone });
+    setExportModalOpen(false);
+    setMessage("Calendar exported.");
   }
 
   async function deleteEvent(event: EventItem) {
@@ -2788,18 +2974,27 @@ function CalendarView({
             </button>
           ))}
         </div>
-        <select
-          className="col-span-3 rounded-full border border-line bg-paper px-4 py-2 text-sm font-medium text-ink outline-none dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper sm:col-span-1"
-          value={calendarGroupId}
-          onChange={(event) => setCalendarGroupId(event.target.value)}
-        >
-          <option value="all">All groups</option>
-          {groups.map((group) => (
-            <option key={group.id} value={group.id}>
-              {group.name}
-            </option>
-          ))}
-        </select>
+        <div className="col-span-3 grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:col-span-1">
+          <select
+            className="min-w-0 rounded-full border border-line bg-paper px-4 py-2 text-sm font-medium text-ink outline-none dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+            value={calendarGroupId}
+            onChange={(event) => setCalendarGroupId(event.target.value)}
+          >
+            <option value="all">All groups</option>
+            {groups.map((group) => (
+              <option key={group.id} value={group.id}>
+                {group.name}
+              </option>
+            ))}
+          </select>
+          <button
+            className="rounded-full border border-line bg-paper px-4 py-2 text-sm font-semibold text-ink dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+            onClick={() => setExportModalOpen(true)}
+            type="button"
+          >
+            Export
+          </button>
+        </div>
       </div>
 
       <CalendarSurface
@@ -2849,6 +3044,50 @@ function CalendarView({
             selectedDate={selectedDate}
             setMessage={setMessage}
           />
+        </div>
+      ) : null}
+      {exportModalOpen ? (
+        <div
+          className="fixed inset-0 z-40 flex items-start justify-center bg-black/45 px-3 pt-[calc(7rem+env(safe-area-inset-top))] text-ink backdrop-blur-sm dark:bg-black/60"
+          onClick={() => setExportModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-white/70 bg-white p-4 shadow-soft dark:border-white/15 dark:bg-[#242420] dark:text-paper"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Export calendar</h2>
+                <p className="mt-1 text-sm text-ink/60 dark:text-paper/55">{exportLabel} · {events.length} event{events.length === 1 ? "" : "s"}</p>
+              </div>
+              <button
+                aria-label="Close export"
+                className="grid h-9 w-9 place-items-center rounded-full border border-line dark:border-white/15"
+                onClick={() => setExportModalOpen(false)}
+                type="button"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="grid gap-2">
+              <button
+                className="flex items-center justify-between rounded-xl border border-line px-4 py-3 text-left font-semibold dark:border-white/15"
+                onClick={exportIcs}
+                type="button"
+              >
+                <span>ICS calendar</span>
+                <Download size={17} />
+              </button>
+              <button
+                className="flex items-center justify-between rounded-xl border border-line px-4 py-3 text-left font-semibold dark:border-white/15"
+                onClick={exportPdf}
+                type="button"
+              >
+                <span>PDF collection</span>
+                <Download size={17} />
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </section>
@@ -4798,13 +5037,45 @@ function CalendarSurface({
         : agendaDays.length
           ? agendaDays
           : [today];
+  function moveMonth(direction: -1 | 1) {
+    const nextMonth = selected.plus({ months: direction }).startOf("month");
+    setSelectedDate(nextMonth.toISODate() ?? selectedDate);
+  }
 
   return (
     <section className="rounded-lg border border-white/70 bg-white/85 p-3 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-ink/65 dark:text-paper/65">
           <CalendarDays size={16} />
-          <span>{selected.toFormat("LLLL")}</span>
+          {view === "month" ? (
+            <div className="flex items-center gap-1">
+              <button
+                aria-label="Previous month"
+                className="grid h-7 w-7 place-items-center rounded-full border border-line bg-paper text-ink dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+                onClick={() => moveMonth(-1)}
+                type="button"
+              >
+                <span aria-hidden="true">{"<"}</span>
+              </button>
+              <button
+                className="rounded-full px-2 py-1 font-medium text-ink transition hover:bg-ink/5 dark:text-paper dark:hover:bg-paper/10"
+                onClick={() => moveMonth(1)}
+                type="button"
+              >
+                {selected.toFormat("LLLL")}
+              </button>
+              <button
+                aria-label="Next month"
+                className="grid h-7 w-7 place-items-center rounded-full border border-line bg-paper text-ink dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+                onClick={() => moveMonth(1)}
+                type="button"
+              >
+                <span aria-hidden="true">{">"}</span>
+              </button>
+            </div>
+          ) : (
+            <span>{selected.toFormat("LLLL")}</span>
+          )}
           <span className="text-ink/35 dark:text-paper/35">/</span>
           <span>let&apos;s make it count</span>
         </div>
