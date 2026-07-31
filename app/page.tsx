@@ -268,6 +268,8 @@ const specialLovePhotoId = "4ebe631a-e43a-4eef-a3da-73f328df44eb";
 const workspaceCachePrefix = "connection-workspace-cache";
 const workspaceLastUserKey = "connection-workspace-last-user";
 const workspaceCacheVersion = 1;
+const appVersion = "0.1.0";
+const betaVersionName = "quiet beta";
 const loveHeartParticles = [
   { left: 8, delay: 0.05, duration: 2.8, size: 1.25 },
   { left: 14, delay: 0.45, duration: 3.1, size: 1.7 },
@@ -361,6 +363,8 @@ function isTransientMessage(message: string) {
     "Photo saved to connections successfully.",
     "Photo deleted successfully.",
     "Photo share link copied.",
+    "Could not copy share link. Try again.",
+    "Beta link copied.",
     "Connection request sent.",
     "Connection request accepted.",
     "Connection request declined.",
@@ -862,11 +866,29 @@ async function copyText(text: string) {
     input.style.position = "fixed";
     input.style.left = "-9999px";
     document.body.appendChild(input);
+    input.focus();
     input.select();
+    input.setSelectionRange(0, input.value.length);
     const copied = document.execCommand("copy");
     document.body.removeChild(input);
     return copied;
   }
+}
+
+async function shareOrCopyLink(url: string) {
+  const copied = await copyText(url);
+  if (copied) return true;
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "Connection photo", url });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
 }
 
 function imageFileToPhotoDataUrl(file: File) {
@@ -970,6 +992,7 @@ export default function Home() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [pendingInvite, setPendingInvite] = useState<InvitePreview | null>(null);
   const notificationAreaRef = useRef<HTMLDivElement | null>(null);
   const pullStartRef = useRef<number | null>(null);
@@ -1010,6 +1033,11 @@ export default function Home() {
   useEffect(() => {
     if (!notificationsOpen) return;
     setNotificationsOpen(false);
+  }, [activeGroupId, activeTab, pendingCaptureSrc, selectedConnectionId, selectedPhotoId]);
+
+  useEffect(() => {
+    if (!aboutOpen) return;
+    setAboutOpen(false);
   }, [activeGroupId, activeTab, pendingCaptureSrc, selectedConnectionId, selectedPhotoId]);
 
   useEffect(() => {
@@ -2061,8 +2089,8 @@ export default function Home() {
       return;
     }
 
-    const copied = await copyText(payload.url);
-    setMessage(copied ? "Photo share link copied." : "Could not copy share link. Try again.");
+    const shared = await shareOrCopyLink(payload.url);
+    setMessage(shared ? "Photo share link copied." : "Could not copy share link. Try again.");
   }
 
   const activeGroup = groups.find((group) => group.id === activeGroupId) ?? null;
@@ -2180,6 +2208,7 @@ export default function Home() {
                 aria-label="Search"
                 className="grid h-9 w-9 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
                 onClick={() => {
+                  setAboutOpen(false);
                   setAccountOpen(false);
                   setNotificationsOpen(false);
                   setHeaderSearchOpen(true);
@@ -2190,12 +2219,28 @@ export default function Home() {
               </button>
             ) : null}
           </div>
-          <ConnectionLogo compact className="pointer-events-none absolute left-1/2 -translate-x-1/2" />
+          <button
+            aria-label="About Connection beta"
+            className="absolute left-1/2 flex -translate-x-1/2 items-baseline gap-1.5 rounded-md px-2 py-1 transition hover:bg-ink/[0.04] dark:hover:bg-paper/[0.06]"
+            onClick={() => {
+              setAccountOpen(false);
+              setNotificationsOpen(false);
+              setHeaderSearchOpen(false);
+              setAboutOpen((value) => !value);
+            }}
+            type="button"
+          >
+            <ConnectionLogo compact />
+            <span className="rounded-full bg-skysoft px-1.5 py-0.5 text-[0.58rem] font-semibold uppercase leading-none tracking-[0.14em] text-[#2f7fa0] dark:bg-[#153141] dark:text-[#8ed8f5]">
+              beta
+            </span>
+          </button>
           <div ref={notificationAreaRef} className="relative flex w-20 items-center justify-end gap-1">
             <button
               aria-label="Notifications"
               className="relative grid h-9 w-9 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
               onClick={() => {
+                setAboutOpen(false);
                 setAccountOpen(false);
                 if (!notificationsOpen) {
                   void loadGroupNotifications();
@@ -2239,6 +2284,16 @@ export default function Home() {
             reload={() => loadWorkspace()}
             setDarkMode={setDarkMode}
             setMessage={setMessage}
+          />
+        ) : null}
+
+        {aboutOpen ? (
+          <AboutConnectionModal
+            onClose={() => setAboutOpen(false)}
+            onCopyBetaLink={async () => {
+              const copied = await copyText(appUrl("/"));
+              setMessage(copied ? "Beta link copied." : "Could not copy beta link. Try again.");
+            }}
           />
         ) : null}
 
@@ -3901,6 +3956,56 @@ function ConnectionLogo({ className, compact = false }: { className?: string; co
       aria-label="Connection"
     >
       Connection
+    </div>
+  );
+}
+
+function AboutConnectionModal({
+  onClose,
+  onCopyBetaLink
+}: {
+  onClose: () => void;
+  onCopyBetaLink: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-start justify-center bg-black/25 px-4 pt-[calc(5.75rem+env(safe-area-inset-top))] text-ink backdrop-blur-sm dark:bg-black/55 dark:text-paper"
+      onClick={onClose}
+    >
+      <section
+        className="w-full max-w-sm rounded-xl border border-line bg-white p-5 shadow-soft dark:border-white/15 dark:bg-[#242420]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.24em] text-[#4aaad0] dark:text-[#8ed8f5]">Beta</p>
+            <h2 className="mt-2 text-2xl font-semibold leading-none">Connection</h2>
+            <p className="mt-2 text-sm text-ink/60 dark:text-paper/60">{betaVersionName} · v{appVersion}</p>
+          </div>
+          <button
+            aria-label="Close about Connection"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line text-ink/70 dark:border-white/15 dark:text-paper/70"
+            onClick={onClose}
+            type="button"
+          >
+            <X size={17} />
+          </button>
+        </div>
+
+        <div className="mt-5 space-y-3 border-y border-line py-4 text-sm leading-6 text-ink/70 dark:border-white/10 dark:text-paper/65">
+          <p>Private photos, group plans, and timezone-aware calendars for the people closest to you.</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-ink/45 dark:text-paper/40">Early preview build</p>
+        </div>
+
+        <button
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-full bg-ink px-4 py-3 text-sm font-semibold text-white transition hover:-translate-y-0.5 dark:bg-paper dark:text-ink"
+          onClick={onCopyBetaLink}
+          type="button"
+        >
+          <Share2 size={16} />
+          Share beta link
+        </button>
+      </section>
     </div>
   );
 }
