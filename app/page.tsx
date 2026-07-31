@@ -991,6 +991,7 @@ export default function Home() {
   const [selectedDate, setSelectedDate] = useState(DateTime.now().toISODate());
   const [calendarEventToOpenId, setCalendarEventToOpenId] = useState<string | null>(null);
   const [loading, setLoading] = useState(hasSupabaseConfig);
+  const [profileChecked, setProfileChecked] = useState(false);
   const [message, setMessage] = useState("");
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window === "undefined") return true;
@@ -1188,6 +1189,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!sessionUserId) {
+      setProfileChecked(false);
       setProfile(null);
       setGroups([]);
       setGroupMembers({});
@@ -1206,6 +1208,17 @@ export default function Home() {
       return;
     }
 
+    setProfileChecked(false);
+    setAccountOpen(false);
+    setAboutOpen(false);
+    setHeaderSearchOpen(false);
+    setNotificationsOpen(false);
+    setActiveGroupId(null);
+    setActiveTab("connections");
+    setSelectedPhotoId(null);
+    setPendingCaptureSrc(null);
+    setSelectedConnectionId(null);
+    setSelectedConnectionProfile(null);
     restoreWorkspaceCache(sessionUserId);
     void loadWorkspace(sessionUserId);
   }, [sessionUserId]);
@@ -1270,6 +1283,7 @@ export default function Home() {
       setEvents(snapshot.events ?? []);
       setPhotos(snapshot.photos ?? []);
       setLoading(false);
+      setProfileChecked(true);
     } catch {
       localStorage.removeItem(workspaceCacheKey(userId));
     }
@@ -1295,6 +1309,7 @@ export default function Home() {
     setEvents([]);
     setViewerWeatherByEventId({});
     setPhotos([]);
+    setProfileChecked(false);
   }
 
   async function loadWorkspace(userId = sessionUserId, options: { clearMessage?: boolean } = {}) {
@@ -1311,6 +1326,7 @@ export default function Home() {
 
     if (profileError) setMessage(profileError.message);
     setProfile(profileData ? { ...profileData, username: normalizeUsername(profileData.username) } : null);
+    setProfileChecked(true);
 
     const { data: membershipData, error: membershipError } = await supabase
       .from("group_members")
@@ -2140,6 +2156,10 @@ export default function Home() {
     return <AuthScreen setMessage={setMessage} message={message} />;
   }
 
+  if (!profile && !profileChecked) {
+    return <ShellStatus label="Opening" />;
+  }
+
   if (!profile) {
     return (
       <ProfileSetup
@@ -2237,10 +2257,11 @@ export default function Home() {
             }}
             type="button"
           >
-            <span className="relative inline-flex pb-2 pr-7">
+            <span className="relative inline-flex flex-col items-center pb-2">
               <ConnectionLogo compact />
-              <span className="absolute bottom-0 right-0 rounded-full bg-skysoft px-2 py-0.5 text-[0.58rem] font-bold uppercase leading-none tracking-[0.08em] text-ink shadow-sm ring-1 ring-white/70 dark:bg-[#d8f4ff] dark:text-[#1d2b34] dark:ring-black/40">
+              <span className="-mt-0.5 inline-flex items-center gap-1 rounded-full bg-skysoft px-2 py-0.5 text-[0.55rem] font-bold uppercase leading-none tracking-[0.08em] text-ink shadow-sm ring-1 ring-white/70 dark:bg-[#d8f4ff] dark:text-[#1d2b34] dark:ring-black/40">
                 beta
+                <Info size={9} strokeWidth={2.4} />
               </span>
             </span>
           </button>
@@ -4122,12 +4143,39 @@ function AuthScreen({ message, setMessage }: { message: string; setMessage: (val
 }
 
 function AuthVisual() {
+  const previewNotifications = [
+    {
+      title: "family",
+      meta: "just now",
+      body: "mira added a photo.",
+      detail: "breakfast before the train"
+    },
+    {
+      title: "us",
+      meta: "2 min ago",
+      body: "sam added an event.",
+      detail: "coffee walk · aug 12, 7:00 pm"
+    },
+    {
+      title: "trip",
+      meta: "today",
+      body: "alex joined the group.",
+      detail: "4 members now"
+    },
+    {
+      title: "timezone",
+      meta: "saved",
+      body: "dad's noon stays dad's noon.",
+      detail: "your time · 2:15 am"
+    }
+  ];
+
   return (
     <div className="hidden lg:block">
       <div className="mb-10 max-w-xl">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-rust">Connections first</p>
-        <h2 className="mt-4 text-6xl font-semibold leading-[0.95] text-ink dark:text-paper">
-          Your people, groups, photos, and plans together.
+        <p className="text-xs font-semibold lowercase tracking-[0.22em] text-rust">connections first</p>
+        <h2 className="mt-4 text-6xl font-semibold lowercase leading-[0.95] text-ink dark:text-paper">
+          your people, groups, photos, and plans together.
         </h2>
       </div>
 
@@ -4135,8 +4183,8 @@ function AuthVisual() {
         <div className="rounded-lg border border-white/70 bg-white/80 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-ink/45 dark:text-paper/45">Preview</p>
-              <h3 className="mt-1 text-xl font-semibold">What Connection does</h3>
+              <p className="text-xs lowercase tracking-[0.18em] text-ink/45 dark:text-paper/45">preview</p>
+              <h3 className="mt-1 text-xl font-semibold lowercase">what connection does</h3>
             </div>
             <div className="grid h-10 w-10 place-items-center rounded-full bg-skysoft text-ink dark:bg-[#153141] dark:text-[#8ed8f5]">
               <Bell size={18} />
@@ -4147,40 +4195,48 @@ function AuthVisual() {
             <div className="rounded-lg border border-line bg-paper/80 p-4 dark:border-white/10 dark:bg-[#1d1d1a]">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-ink/45 dark:text-paper/40">Group</p>
+                  <p className="text-xs lowercase tracking-[0.18em] text-ink/45 dark:text-paper/40">group</p>
                   <h4 className="mt-1 text-2xl font-semibold">family</h4>
                 </div>
                 <div className="flex -space-x-2">
-                  <Avatar name="nurbulama" size="sm" />
-                  <Avatar name="pratikshya" size="sm" />
-                  <Avatar name="sangram" size="sm" />
+                  <Avatar name="mira" size="sm" />
+                  <Avatar name="sam" size="sm" />
+                  <Avatar name="alex" size="sm" />
                 </div>
               </div>
-              <p className="mt-3 text-sm text-ink/60 dark:text-paper/55">Private photos and plans stay with the people in that group.</p>
+              <p className="mt-3 text-sm lowercase text-ink/60 dark:text-paper/55">private photos and plans stay with the people in that group.</p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-[1fr_0.9fr]">
+            <div className="grid gap-2 sm:grid-cols-2">
               <div className="rounded-lg border border-line bg-paper/80 p-4 dark:border-white/10 dark:bg-[#1d1d1a]">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink/65 dark:text-paper/60">
+                <div className="mb-3 flex items-center gap-2 text-sm lowercase font-semibold text-ink/65 dark:text-paper/60">
                   <CalendarDays size={16} />
-                  Aug / let's make it count
+                  aug / let's make it count
                 </div>
                 <div className="rounded-lg bg-sage/25 p-3 dark:bg-sage/20">
-                  <p className="text-sm font-semibold">Call Dad</p>
-                  <p className="mt-1 text-xs text-ink/60 dark:text-paper/55">Your time: 2:15 AM</p>
-                  <p className="text-xs text-ink/45 dark:text-paper/40">Entered as: 12:00 PM · Nepal</p>
+                  <p className="text-sm font-semibold lowercase">call dad</p>
+                  <p className="mt-1 text-xs lowercase text-ink/60 dark:text-paper/55">your time: 2:15 am</p>
+                  <p className="text-xs lowercase text-ink/45 dark:text-paper/40">entered as: 12:00 pm · nepal</p>
                 </div>
               </div>
 
-              <div className="rounded-lg border border-line bg-paper/80 p-4 dark:border-white/10 dark:bg-[#1d1d1a]">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold">us</p>
-                    <p className="mt-1 text-xs uppercase tracking-[0.18em] text-ink/40 dark:text-paper/35">Just now</p>
+              <div className="grid gap-2">
+                {previewNotifications.map((item, index) => (
+                  <div
+                    key={`${item.title}-${item.meta}`}
+                    className={clsx(
+                      "rounded-lg border border-line bg-paper/80 p-3 dark:border-white/10 dark:bg-[#1d1d1a]",
+                      index === 0 && "border-sage/60 bg-sage/15 dark:bg-sage/10"
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="truncate text-sm font-semibold lowercase">{item.title}</p>
+                      <p className="shrink-0 text-[0.6rem] lowercase tracking-[0.16em] text-ink/35 dark:text-paper/35">{item.meta}</p>
+                    </div>
+                    <p className="mt-2 text-xs lowercase leading-5 text-ink/65 dark:text-paper/60">{item.body}</p>
+                    <p className="mt-2 rounded-md bg-white/45 px-2 py-1.5 text-xs lowercase text-ink/55 dark:bg-white/5 dark:text-paper/50">{item.detail}</p>
                   </div>
-                  <span className="h-2 w-2 rounded-full bg-rust" />
-                </div>
-                <p className="mt-4 text-sm leading-5 text-ink/65 dark:text-paper/60">pratikshya added dinner in us.</p>
+                ))}
               </div>
             </div>
           </div>
@@ -4188,7 +4244,7 @@ function AuthVisual() {
 
         <div className="mt-4 flex items-center gap-3 text-sm text-ink/60 dark:text-paper/60">
           <span className="h-px flex-1 bg-line dark:bg-white/15" />
-          Photos, groups, plans, and the tiny updates that matter
+          photos, groups, plans, and the tiny updates that matter
           <span className="h-px flex-1 bg-line dark:bg-white/15" />
         </div>
       </div>
