@@ -11,6 +11,7 @@ import {
   Clock3,
   Copy,
   Download,
+  HeartHandshake,
   Image as ImageIcon,
   Info,
   Link2,
@@ -23,7 +24,6 @@ import {
   Search,
   Send,
   Settings,
-  Share2,
   Shield,
   Sun,
   Trash2,
@@ -2274,7 +2274,7 @@ export default function Home() {
           </div>
           <button
             aria-label="About Connection beta"
-            className="absolute left-1/2 -translate-x-1/2 rounded-md px-2 py-1 transition hover:bg-ink/[0.04] dark:hover:bg-paper/[0.06]"
+            className="absolute left-1/2 w-44 -translate-x-1/2 rounded-md px-2 py-1 transition hover:bg-ink/[0.04] dark:hover:bg-paper/[0.06]"
             onClick={() => {
               setAccountOpen(false);
               setNotificationsOpen(false);
@@ -2283,9 +2283,9 @@ export default function Home() {
             }}
             type="button"
           >
-            <span className="relative inline-flex flex-col items-center pb-2">
-              <ConnectionLogo compact />
-              <span className="-mt-0.5 inline-flex items-center gap-1 rounded-full bg-skysoft px-2 py-0.5 text-[0.55rem] font-bold uppercase leading-none tracking-[0.08em] text-ink shadow-sm ring-1 ring-white/70 dark:bg-[#d8f4ff] dark:text-[#1d2b34] dark:ring-black/40">
+            <span className="relative block">
+              <ConnectionLogo compact className="mx-auto" />
+              <span className="absolute left-[calc(50%+3.75rem)] top-1/2 inline-flex -translate-y-1/2 items-center gap-1 rounded-full bg-skysoft px-2 py-0.5 text-[0.55rem] font-bold uppercase leading-none tracking-[0.08em] text-ink shadow-sm ring-1 ring-white/70 dark:bg-[#d8f4ff] dark:text-[#1d2b34] dark:ring-black/40">
                 beta
                 <Info size={9} strokeWidth={2.4} />
               </span>
@@ -3523,12 +3523,13 @@ function PhotoViewer({
         {canDelete ? (
           <div className="flex h-9 items-center justify-end gap-1">
             <button
-              aria-label="Copy public share link"
+              aria-label="Copy keepsake link"
               className="grid h-9 w-9 place-items-center"
               onClick={() => void onShare(photo)}
+              title="Copy keepsake link"
               type="button"
             >
-              <Share2 size={18} />
+              <HeartHandshake size={18} strokeWidth={1.9} />
             </button>
             <button
               aria-label="Delete photo"
@@ -4086,7 +4087,7 @@ function AboutConnectionModal({
           onClick={onCopyBetaLink}
           type="button"
         >
-          <Share2 size={16} />
+          <Link2 size={16} />
           Share beta link
         </button>
       </section>
