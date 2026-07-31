@@ -1026,7 +1026,7 @@ export default function Home() {
     if (!message) return;
     const timeout = window.setTimeout(() => {
       setMessage((currentMessage) => (currentMessage === message ? "" : currentMessage));
-    }, 2000);
+    }, 3500);
     return () => window.clearTimeout(timeout);
   }, [message]);
 
