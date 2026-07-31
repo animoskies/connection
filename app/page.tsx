@@ -4118,6 +4118,7 @@ function AuthScreen({ message, setMessage }: { message: string; setMessage: (val
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [installHelpOpen, setInstallHelpOpen] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -4184,6 +4185,14 @@ function AuthScreen({ message, setMessage }: { message: string; setMessage: (val
             <p className="mt-3 text-sm leading-6 text-ink/65 dark:text-paper/65">
               Keep photos, groups, and shared plans in one quiet place.
             </p>
+            <button
+              className="mt-4 inline-flex items-center gap-2 rounded-full border border-line px-3 py-2 text-xs font-semibold text-ink/70 transition hover:-translate-y-0.5 hover:text-ink dark:border-white/15 dark:text-paper/65 dark:hover:text-paper"
+              onClick={() => setInstallHelpOpen(true)}
+              type="button"
+            >
+              <Download size={14} />
+              save to home screen
+            </button>
           </div>
           <form className="flex flex-col gap-3" onSubmit={submit}>
             <Segmented
@@ -4207,6 +4216,43 @@ function AuthScreen({ message, setMessage }: { message: string; setMessage: (val
           </form>
         </div>
       </section>
+
+      {installHelpOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-5 text-ink backdrop-blur-sm dark:bg-black/60 dark:text-paper"
+          onClick={() => setInstallHelpOpen(false)}
+        >
+          <section
+            className="w-full max-w-sm rounded-xl border border-line bg-white p-5 shadow-soft dark:border-white/15 dark:bg-[#242420]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[0.66rem] font-semibold uppercase tracking-[0.24em] text-[#4aaad0] dark:text-[#8ed8f5]">iPhone</p>
+                <h2 className="mt-2 text-2xl font-semibold leading-none">save like an app</h2>
+              </div>
+              <button
+                aria-label="Close install instructions"
+                className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line text-ink/70 dark:border-white/15 dark:text-paper/70"
+                onClick={() => setInstallHelpOpen(false)}
+                type="button"
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <ol className="mt-5 space-y-3 text-sm leading-6 text-ink/70 dark:text-paper/65">
+              <li className="rounded-lg border border-line p-3 dark:border-white/10">1. open Connection in Safari on your iPhone.</li>
+              <li className="rounded-lg border border-line p-3 dark:border-white/10">2. tap the Safari share button.</li>
+              <li className="rounded-lg border border-line p-3 dark:border-white/10">3. choose Add to Home Screen.</li>
+            </ol>
+
+            <p className="mt-4 text-xs leading-5 text-ink/45 dark:text-paper/42">
+              after that, Connection opens from your home screen with a more app-like feel.
+            </p>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
