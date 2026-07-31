@@ -2271,12 +2271,12 @@ export default function Home() {
           </div>
         ) : null}
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-ink/[0.08] py-1.5 dark:border-paper/[0.12]">
-          <div className="flex w-20 items-center gap-1">
+          <div className="flex w-20 items-center gap-0.5">
             <label
               aria-label="Open camera"
-              className="grid h-9 w-9 cursor-pointer place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
+              className="grid h-8 w-8 cursor-pointer place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
             >
-              <Plus size={25} strokeWidth={1.8} />
+              <Plus size={22} strokeWidth={1.8} />
               <input
                 accept="image/*"
                 capture="environment"
@@ -2291,7 +2291,7 @@ export default function Home() {
             {activeTab === "connections" && !selectedConnectionId ? (
               <button
                 aria-label="Search"
-                className="grid h-9 w-9 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
+                className="grid h-8 w-8 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
                 onClick={() => {
                   setAboutOpen(false);
                   setAccountOpen(false);
@@ -2300,7 +2300,7 @@ export default function Home() {
                 }}
                 type="button"
               >
-                <Search size={19} strokeWidth={1.8} />
+                <Search size={17} strokeWidth={1.8} />
               </button>
             ) : null}
           </div>
@@ -2315,7 +2315,7 @@ export default function Home() {
             }}
             type="button"
           >
-            <span className="flex items-center justify-center gap-2 whitespace-nowrap">
+            <span className="flex items-center justify-center gap-1.5 whitespace-nowrap">
               <ConnectionLogo compact />
               <span className="inline-flex translate-y-px items-center gap-1 rounded-full bg-skysoft px-2 py-0.5 text-[0.55rem] font-bold uppercase leading-none tracking-[0.08em] text-ink shadow-sm ring-1 ring-white/70 dark:bg-[#d8f4ff] dark:text-[#1d2b34] dark:ring-black/40">
                 beta
@@ -2326,7 +2326,7 @@ export default function Home() {
           <div ref={notificationAreaRef} className="relative flex w-20 items-center justify-end gap-1">
             <button
               aria-label="Notifications"
-              className="relative grid h-9 w-9 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
+              className="relative grid h-8 w-8 place-items-center text-ink transition hover:-translate-y-0.5 dark:text-paper"
               onClick={() => {
                 setAboutOpen(false);
                 setAccountOpen(false);
@@ -2340,9 +2340,9 @@ export default function Home() {
               }}
               type="button"
             >
-              <Bell size={17} />
+              <Bell size={15.5} />
               {notificationCount ? (
-                <span className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-rust" />
+                <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-rust" />
               ) : null}
             </button>
             {notificationsOpen ? (
