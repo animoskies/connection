@@ -3489,13 +3489,23 @@ function PhotoViewer({
   const [captionDraft, setCaptionDraft] = useState(photo.caption);
   const [captionEditorOpen, setCaptionEditorOpen] = useState(false);
   const [heartBurstKey, setHeartBurstKey] = useState(0);
+  const [imageReady, setImageReady] = useState(false);
   const lastHeartTapRef = useRef(0);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     setCaptionDraft(photo.caption);
     setCaptionEditorOpen(false);
+    setImageReady(false);
   }, [photo.caption, photo.id]);
+
+  useEffect(() => {
+    [previousPhoto, nextPhoto].forEach((nearbyPhoto) => {
+      if (!nearbyPhoto) return;
+      const image = new window.Image();
+      image.src = nearbyPhoto.src;
+    });
+  }, [nextPhoto?.src, previousPhoto?.src]);
 
   function triggerHeartBurst() {
     setHeartBurstKey(Date.now());
@@ -3583,7 +3593,18 @@ function PhotoViewer({
           handlePhotoTap();
         }}
       >
-        <img alt={photo.title} className="h-full w-full object-contain" src={photo.src} />
+        {!imageReady ? (
+          <div className="absolute inset-0 grid place-items-center bg-black text-xs uppercase tracking-[0.18em] text-paper/35">
+            loading
+          </div>
+        ) : null}
+        <img
+          key={photo.id}
+          alt={photo.title}
+          className={clsx("h-full w-full object-contain transition-opacity duration-150", imageReady ? "opacity-100" : "opacity-0")}
+          src={photo.src}
+          onLoad={() => setImageReady(true)}
+        />
 
         {heartBurstKey ? (
           <span key={heartBurstKey} className="viewer-heart-burst" aria-hidden="true">
@@ -4110,7 +4131,7 @@ function AboutConnectionModal({
         </div>
 
         <div className="mt-5 space-y-3 border-y border-line py-4 text-sm leading-6 text-ink/70 dark:border-white/10 dark:text-paper/65">
-          <p>Private photos, group plans, and timezone-aware calendars for the people closest to you.</p>
+          <p>Private photos, tiny updates, and an intimate calendar for the people closest to you.</p>
           <p className="text-xs uppercase tracking-[0.18em] text-ink/45 dark:text-paper/40">Early preview build</p>
         </div>
 
