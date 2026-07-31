@@ -195,6 +195,12 @@ type ConnectionNotification = {
   createdAt: string;
 };
 
+type BetaRequest = {
+  email: string;
+  requestedAt: string;
+  approvedAt: string | null;
+};
+
 type InvitePreview = {
   token: string;
   groupId: string;
@@ -370,8 +376,11 @@ function isTransientMessage(message: string) {
     "Photo saved to connections successfully.",
     "Photo deleted successfully.",
     "Photo share link copied.",
+    "Could not create share link. Authentication required.",
     "Could not copy share link. Try again.",
     "Beta link copied.",
+    "Beta access requested.",
+    "Beta request approved.",
     "Connection request sent.",
     "Connection request accepted.",
     "Connection request declined.",
@@ -397,6 +406,7 @@ function isTransientMessage(message: string) {
     message.startsWith("Invite sent to ") ||
     message.startsWith("Joined ") ||
     message.startsWith("Only admin ") ||
+    message.startsWith("Could not create share link.") ||
     message.startsWith("Connect with ");
 }
 
@@ -1866,10 +1876,15 @@ export default function Home() {
     setMessage("Invite declined.");
   }
 
-  async function authHeaders() {
+  async function authHeaders(options: { refresh?: boolean } = {}) {
     if (!supabase) return null;
     const { data } = await supabase.auth.getSession();
-    const token = data.session?.access_token;
+    let session = data.session;
+    if (options.refresh && session) {
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      session = refreshed.session ?? session;
+    }
+    const token = session?.access_token;
     return token ? { Authorization: `Bearer ${token}` } : null;
   }
 
@@ -2098,14 +2113,25 @@ export default function Home() {
   }
 
   async function copyPhotoShareLink(photo: PhotoItem) {
-    const headers = await authHeaders();
+    const headers = await authHeaders({ refresh: true });
     if (!headers) return;
 
-    const response = await fetch(`/api/photos/${photo.id}/share`, {
+    let response = await fetch(`/api/photos/${photo.id}/share`, {
       method: "POST",
       headers
     });
-    const payload = await response.json();
+    let payload = await response.json();
+
+    if (response.status === 401) {
+      const refreshedHeaders = await authHeaders({ refresh: true });
+      if (refreshedHeaders) {
+        response = await fetch(`/api/photos/${photo.id}/share`, {
+          method: "POST",
+          headers: refreshedHeaders
+        });
+        payload = await response.json();
+      }
+    }
 
     if (!response.ok || !payload.url) {
       setMessage(`Could not create share link. ${payload.error ?? "Please try again."}`);
@@ -4069,16 +4095,54 @@ function AboutConnectionModal({
 }
 
 function AuthScreen({ message, setMessage }: { message: string; setMessage: (value: string) => void }) {
-  const [mode, setMode] = useState<"signin" | "signup">("signup");
+  const [mode, setMode] = useState<"signin" | "signup" | "request">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (!supabase) return;
+    if (!supabase && mode !== "request") return;
     setBusy(true);
     setMessage("");
+    const cleanedEmail = email.trim().toLowerCase();
+
+    if (mode === "request") {
+      const response = await fetch("/api/beta/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanedEmail })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(payload.error ?? "Could not request beta access.");
+      } else if (payload.approved) {
+        setMode("signup");
+        setMessage("Beta access approved. Create your account.");
+      } else {
+        setMessage("Beta access requested.");
+      }
+      setBusy(false);
+      return;
+    }
+
+    const client = supabase;
+    if (!client) {
+      setBusy(false);
+      return;
+    }
+
+    if (mode === "signup") {
+      const response = await fetch(`/api/beta/requests?email=${encodeURIComponent(cleanedEmail)}`);
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.approved) {
+        setMode("request");
+        setMessage("Beta access needs approval first.");
+        setBusy(false);
+        return;
+      }
+    }
+
     const pendingInvite = localStorage.getItem("connection-pending-invite");
     const emailRedirectTo =
       mode === "signup"
@@ -4087,14 +4151,14 @@ function AuthScreen({ message, setMessage }: { message: string; setMessage: (val
 
     const { data, error } =
       mode === "signup"
-        ? await supabase.auth.signUp({
-            email,
+        ? await client.auth.signUp({
+            email: cleanedEmail,
             password,
             options: {
               emailRedirectTo
             }
           })
-        : await supabase.auth.signInWithPassword({ email, password });
+        : await client.auth.signInWithPassword({ email: cleanedEmail, password });
 
     if (error) setMessage(error.message);
     if (mode === "signup" && !error && !data.session) {
@@ -4120,20 +4184,21 @@ function AuthScreen({ message, setMessage }: { message: string; setMessage: (val
             <Segmented
               value={mode}
               options={[
-                ["signup", "Create account"],
-                ["signin", "Sign in"]
+                ["signin", "Sign in"],
+                ["signup", "Create"],
+                ["request", "Request"]
               ]}
-              onChange={(value) => setMode(value as "signin" | "signup")}
+              onChange={(value) => setMode(value as "signin" | "signup" | "request")}
             />
             <Field label="Email" type="email" value={email} onChange={setEmail} required />
-            <Field label="Password" type="password" value={password} onChange={setPassword} required />
+            {mode !== "request" ? <Field label="Password" type="password" value={password} onChange={setPassword} required /> : null}
             {message ? (
               <p className="rounded-md border border-rust/20 bg-rust/15 px-3 py-2 text-sm text-rust dark:text-[#ffb49a]">
                 {message}
               </p>
             ) : null}
             <button className="mt-2 rounded-full bg-ink px-4 py-3 font-medium text-paper shadow-sm transition hover:-translate-y-0.5 dark:bg-paper dark:text-ink">
-              {busy ? "Working..." : mode === "signup" ? "Create account" : "Sign in"}
+              {busy ? "Working..." : mode === "signup" ? "Create account" : mode === "request" ? "Request beta access" : "Sign in"}
             </button>
           </form>
         </div>
@@ -4355,6 +4420,50 @@ function AccountMenu({
   const [timezone, setTimezone] = useState(profile.preferred_timezone);
   const [avatarUrl, setAvatarUrl] = useState(profile.avatar_url ?? "");
   const [busy, setBusy] = useState(false);
+  const [betaRequests, setBetaRequests] = useState<BetaRequest[] | null>(null);
+
+  useEffect(() => {
+    void loadBetaRequests();
+  }, []);
+
+  async function accountAuthHeaders() {
+    if (!supabase) return null;
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    return token ? { Authorization: `Bearer ${token}` } : null;
+  }
+
+  async function loadBetaRequests() {
+    const headers = await accountAuthHeaders();
+    if (!headers) return;
+    const response = await fetch("/api/beta/requests", { headers });
+    const payload = await response.json().catch(() => ({}));
+    if (response.status === 403) {
+      setBetaRequests(null);
+      return;
+    }
+    if (!response.ok) return;
+    setBetaRequests(payload.requests ?? []);
+  }
+
+  async function approveBetaRequest(email: string) {
+    const headers = await accountAuthHeaders();
+    if (!headers) return;
+    setBusy(true);
+    const response = await fetch("/api/beta/requests", {
+      method: "PATCH",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ email })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(payload.error ?? "Could not approve beta request.");
+    } else {
+      setBetaRequests((current) => current?.filter((request) => request.email !== email) ?? null);
+      setMessage("Beta request approved.");
+    }
+    setBusy(false);
+  }
 
   async function uploadAvatar(file: File | null) {
     if (!supabase || !file) return;
@@ -4429,7 +4538,7 @@ function AccountMenu({
       .eq("id", profile.id);
 
     if (error) {
-      setMessage(error.message);
+      setMessage(profileErrorMessage(error));
     } else {
       await reload();
       setMessage("Account settings updated.");
@@ -4499,6 +4608,49 @@ function AccountMenu({
           Save account
         </button>
       </form>
+
+      {betaRequests !== null ? (
+        <section className="mt-4 rounded-xl border border-line p-3 dark:border-white/15">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#4aaad0] dark:text-[#8ed8f5]">Beta access</p>
+              <p className="mt-1 text-xs text-ink/55 dark:text-paper/55">
+                {betaRequests.length ? `${betaRequests.length} waiting` : "No pending requests"}
+              </p>
+            </div>
+            <button
+              className="rounded-full border border-line px-3 py-1.5 text-xs font-medium dark:border-white/15"
+              onClick={() => void loadBetaRequests()}
+              type="button"
+            >
+              Refresh
+            </button>
+          </div>
+          {betaRequests.length ? (
+            <div className="grid gap-2">
+              {betaRequests.map((request) => (
+                <div
+                  className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2 dark:border-white/10"
+                  key={request.email}
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">{request.email}</p>
+                    <p className="text-xs text-ink/45 dark:text-paper/45">{notificationTime(request.requestedAt)}</p>
+                  </div>
+                  <button
+                    className="rounded-full bg-skysoft px-3 py-1.5 text-xs font-semibold text-ink disabled:opacity-50"
+                    disabled={busy}
+                    onClick={() => void approveBetaRequest(request.email)}
+                    type="button"
+                  >
+                    Approve
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <button
         className="mt-4 flex w-full items-center justify-center gap-2 rounded-full border border-line px-4 py-2.5 text-sm font-medium dark:border-white/15"
@@ -6020,7 +6172,10 @@ function Segmented({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="grid grid-cols-2 rounded-full border border-line bg-paper p-1 dark:border-white/15 dark:bg-[#1d1d1a]">
+    <div
+      className="grid rounded-full border border-line bg-paper p-1 dark:border-white/15 dark:bg-[#1d1d1a]"
+      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+    >
       {options.map(([optionValue, label]) => (
         <button
           type="button"

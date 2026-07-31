@@ -22,6 +22,22 @@ alter table public.profiles
 alter table public.profiles
   add column if not exists avatar_url text;
 
+create table if not exists public.beta_requests (
+  email text primary key check (email = lower(email)),
+  requested_at timestamptz not null default now(),
+  approved_at timestamptz,
+  approved_by uuid references public.profiles(id) on delete set null
+);
+
+create table if not exists public.beta_access (
+  email text primary key check (email = lower(email)),
+  approved_at timestamptz not null default now(),
+  approved_by uuid references public.profiles(id) on delete set null
+);
+
+create index if not exists beta_requests_requested_at_idx on public.beta_requests(requested_at desc);
+create index if not exists beta_access_approved_at_idx on public.beta_access(approved_at desc);
+
 create table if not exists public.groups (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -1024,6 +1040,8 @@ end;
 $$;
 
 alter table public.profiles enable row level security;
+alter table public.beta_requests enable row level security;
+alter table public.beta_access enable row level security;
 alter table public.groups enable row level security;
 alter table public.group_members enable row level security;
 alter table public.group_invites enable row level security;
@@ -1037,6 +1055,8 @@ alter table public.photo_shares enable row level security;
 drop policy if exists "Profiles are visible to signed in users" on public.profiles;
 drop policy if exists "Users can insert their own profile" on public.profiles;
 drop policy if exists "Users can update their own profile" on public.profiles;
+drop policy if exists "Beta requests are server managed" on public.beta_requests;
+drop policy if exists "Beta access is server managed" on public.beta_access;
 drop policy if exists "Members can read groups" on public.groups;
 drop policy if exists "Users can create groups" on public.groups;
 drop policy if exists "Owners can update groups" on public.groups;
