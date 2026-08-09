@@ -2068,7 +2068,10 @@ export default function Home() {
 
   async function updatePhotoCaption(photo: PhotoItem, caption: string) {
     const headers = await authHeaders();
-    if (!headers) return;
+    if (!headers) {
+      setMessage("Please sign in again to edit captions.");
+      return false;
+    }
 
     const response = await fetch(`/api/photos/${photo.id}`, {
       method: "PATCH",
@@ -2083,17 +2086,18 @@ export default function Home() {
         tags: photo.tags
       })
     });
-    const payload = await response.json();
+    const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
       setMessage(`Failed to update caption. ${payload.error ?? "Please try again."}`);
-      return;
+      return false;
     }
 
     setPhotos((currentPhotos) =>
       currentPhotos.map((item) => (item.id === photo.id ? { ...item, caption: caption.trim() } : item))
     );
     setMessage("Caption saved.");
+    return true;
   }
 
   async function copyPhotoShareLink(photo: PhotoItem) {
@@ -3431,7 +3435,7 @@ function PhotoViewer({
   canOpenOwner: boolean;
   onOpenOwner: (photo: PhotoItem) => void;
   onDelete: (photo: PhotoItem) => void;
-  onEditCaption: (photo: PhotoItem, caption: string) => Promise<void>;
+  onEditCaption: (photo: PhotoItem, caption: string) => Promise<boolean>;
   onShare: (photo: PhotoItem) => Promise<void>;
   onExitContext: () => void;
   photo: PhotoItem;
@@ -3651,7 +3655,11 @@ function PhotoViewer({
             <div className="mt-3 flex gap-2">
               <button
                 className="flex-1 rounded-full bg-paper px-4 py-2 font-medium text-ink"
-                onClick={() => void onEditCaption(photo, captionDraft).then(() => setCaptionEditorOpen(false))}
+                onClick={() =>
+                  void onEditCaption(photo, captionDraft).then((saved) => {
+                    if (saved) setCaptionEditorOpen(false);
+                  })
+                }
                 type="button"
               >
                 Save

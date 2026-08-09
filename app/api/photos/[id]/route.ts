@@ -10,7 +10,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
   const supabase = createSupabaseRouteClient(request.headers.get("authorization"));
   const body = await request.json();
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("photos")
     .update({
       title: body.title,
@@ -18,10 +18,16 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       location: body.location,
       tags: body.tags
     })
-    .eq("id", id);
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+
+  if (!data) {
+    return NextResponse.json({ error: "You can only edit captions on photos you posted." }, { status: 403 });
   }
 
   return NextResponse.json({ ok: true });
