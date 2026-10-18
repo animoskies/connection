@@ -184,7 +184,9 @@ create unique index if not exists connections_unique_pair_idx
 
 create table if not exists public.events (
   id uuid primary key default gen_random_uuid(),
-  group_id uuid not null references public.groups(id) on delete cascade,
+  group_id uuid references public.groups(id) on delete cascade,
+  owner_id uuid references public.profiles(id) on delete cascade,
+  project_id uuid,
   title text not null,
   description text,
   location text,
@@ -199,6 +201,8 @@ create table if not exists public.events (
 );
 
 alter table public.events
+  add column if not exists owner_id uuid references public.profiles(id) on delete cascade,
+  add column if not exists project_id uuid,
   add column if not exists reference text,
   add column if not exists location_lat double precision,
   add column if not exists location_lon double precision,
@@ -209,6 +213,53 @@ alter table public.events
   add column if not exists weather_next_check_at timestamptz,
   add column if not exists weather_rain_probability integer,
   add column if not exists weather_source text;
+
+update public.events
+set owner_id = creator_id
+where owner_id is null;
+
+alter table public.events
+  alter column owner_id set not null,
+  alter column group_id drop not null;
+
+create table if not exists public.projects (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  group_id uuid references public.groups(id) on delete cascade,
+  name text not null,
+  type text not null check (type in ('fitness', 'writing', 'audio', 'music')),
+  subtype text,
+  settings jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.project_entries (
+  id uuid primary key default gen_random_uuid(),
+  project_id uuid not null references public.projects(id) on delete cascade,
+  owner_id uuid not null references public.profiles(id) on delete cascade,
+  kind text not null check (kind in ('workout', 'journal', 'draft', 'voice_memo', 'stem', 'lyrics')),
+  title text not null,
+  body text,
+  media_path text,
+  metadata jsonb not null default '{}'::jsonb,
+  occurred_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'events_project_id_fkey'
+  ) then
+    alter table public.events
+      add constraint events_project_id_fkey
+      foreign key (project_id) references public.projects(id) on delete set null;
+  end if;
+end
+$$;
 
 create table if not exists public.photos (
   id uuid primary key default gen_random_uuid(),
@@ -243,6 +294,12 @@ create index if not exists photos_taken_at_idx on public.photos(taken_at desc);
 create index if not exists photo_shares_photo_id_idx on public.photo_shares(photo_id);
 create index if not exists photo_shares_owner_id_idx on public.photo_shares(owner_id);
 create index if not exists photo_shares_token_idx on public.photo_shares(token);
+create index if not exists events_owner_id_idx on public.events(owner_id);
+create index if not exists events_project_id_idx on public.events(project_id);
+create index if not exists projects_owner_id_idx on public.projects(owner_id);
+create index if not exists projects_group_id_idx on public.projects(group_id);
+create index if not exists project_entries_project_id_idx on public.project_entries(project_id, occurred_at desc);
+create index if not exists project_entries_owner_id_idx on public.project_entries(owner_id);
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('connection-photos', 'connection-photos', false, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
@@ -253,6 +310,13 @@ set public = excluded.public,
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('connection-avatars', 'connection-avatars', true, 1048576, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update
+set public = excluded.public,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('project-audio', 'project-audio', false, 26214400, array['audio/webm', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/ogg'])
 on conflict (id) do update
 set public = excluded.public,
     file_size_limit = excluded.file_size_limit,
@@ -1049,6 +1113,8 @@ alter table public.group_notifications enable row level security;
 alter table public.connection_notifications enable row level security;
 alter table public.connections enable row level security;
 alter table public.events enable row level security;
+alter table public.projects enable row level security;
+alter table public.project_entries enable row level security;
 alter table public.photos enable row level security;
 alter table public.photo_shares enable row level security;
 
@@ -1080,6 +1146,14 @@ drop policy if exists "Members can read events" on public.events;
 drop policy if exists "Owners and editors can create events" on public.events;
 drop policy if exists "Owners and editors can update events" on public.events;
 drop policy if exists "Owners and editors can delete events" on public.events;
+drop policy if exists "Members can read projects" on public.projects;
+drop policy if exists "Users can create projects" on public.projects;
+drop policy if exists "Owners can update projects" on public.projects;
+drop policy if exists "Owners can delete projects" on public.projects;
+drop policy if exists "Members can read project entries" on public.project_entries;
+drop policy if exists "Members can create project entries" on public.project_entries;
+drop policy if exists "Owners can update project entries" on public.project_entries;
+drop policy if exists "Owners can delete project entries" on public.project_entries;
 drop policy if exists "Members can read photos" on public.photos;
 drop policy if exists "Members can create photos" on public.photos;
 drop policy if exists "Owners can update their photos" on public.photos;
@@ -1095,6 +1169,10 @@ drop policy if exists "Avatar objects are public" on storage.objects;
 drop policy if exists "Users can upload their own avatar objects" on storage.objects;
 drop policy if exists "Users can update their own avatar objects" on storage.objects;
 drop policy if exists "Users can delete their own avatar objects" on storage.objects;
+drop policy if exists "Project audio objects can be read by visible members" on storage.objects;
+drop policy if exists "Users can upload their own project audio objects" on storage.objects;
+drop policy if exists "Users can update their own project audio objects" on storage.objects;
+drop policy if exists "Users can delete their own project audio objects" on storage.objects;
 
 create policy "Profiles are visible to signed in users"
   on public.profiles for select
@@ -1248,25 +1326,132 @@ create policy "Users can remove their connections"
 create policy "Members can read events"
   on public.events for select
   to authenticated
-  using (public.is_group_member(events.group_id, auth.uid()));
+  using (
+    (group_id is null and owner_id = auth.uid())
+    or (group_id is not null and public.is_group_member(group_id, auth.uid()))
+  );
 
 create policy "Owners and editors can create events"
   on public.events for insert
   to authenticated
   with check (
     creator_id = auth.uid()
-    and public.group_role_for(events.group_id, auth.uid()) in ('owner', 'editor')
+    and owner_id = auth.uid()
+    and (
+      group_id is null
+      or public.group_role_for(group_id, auth.uid()) in ('owner', 'editor')
+    )
   );
 
 create policy "Owners and editors can update events"
   on public.events for update
   to authenticated
-  using (public.group_role_for(events.group_id, auth.uid()) in ('owner', 'editor'));
+  using (
+    (group_id is null and owner_id = auth.uid())
+    or (
+      group_id is not null
+      and public.group_role_for(group_id, auth.uid()) in ('owner', 'editor')
+    )
+  )
+  with check (
+    (group_id is null and owner_id = auth.uid())
+    or (
+      group_id is not null
+      and public.group_role_for(group_id, auth.uid()) in ('owner', 'editor')
+    )
+  );
 
 create policy "Owners and editors can delete events"
   on public.events for delete
   to authenticated
-  using (public.group_role_for(events.group_id, auth.uid()) in ('owner', 'editor'));
+  using (
+    (group_id is null and owner_id = auth.uid())
+    or (
+      group_id is not null
+      and public.group_role_for(group_id, auth.uid()) in ('owner', 'editor')
+    )
+  );
+
+create policy "Members can read projects"
+  on public.projects for select
+  to authenticated
+  using (
+    owner_id = auth.uid()
+    or (
+      group_id is not null
+      and public.is_group_member(group_id, auth.uid())
+    )
+  );
+
+create policy "Users can create projects"
+  on public.projects for insert
+  to authenticated
+  with check (
+    owner_id = auth.uid()
+    and (
+      group_id is null
+      or public.is_group_member(group_id, auth.uid())
+    )
+  );
+
+create policy "Owners can update projects"
+  on public.projects for update
+  to authenticated
+  using (owner_id = auth.uid())
+  with check (owner_id = auth.uid());
+
+create policy "Owners can delete projects"
+  on public.projects for delete
+  to authenticated
+  using (owner_id = auth.uid());
+
+create policy "Members can read project entries"
+  on public.project_entries for select
+  to authenticated
+  using (
+    exists (
+      select 1
+      from public.projects
+      where projects.id = project_entries.project_id
+        and (
+          projects.owner_id = auth.uid()
+          or (
+            projects.group_id is not null
+            and public.is_group_member(projects.group_id, auth.uid())
+          )
+        )
+    )
+  );
+
+create policy "Members can create project entries"
+  on public.project_entries for insert
+  to authenticated
+  with check (
+    owner_id = auth.uid()
+    and exists (
+      select 1
+      from public.projects
+      where projects.id = project_entries.project_id
+        and (
+          projects.owner_id = auth.uid()
+          or (
+            projects.group_id is not null
+            and public.is_group_member(projects.group_id, auth.uid())
+          )
+        )
+    )
+  );
+
+create policy "Owners can update project entries"
+  on public.project_entries for update
+  to authenticated
+  using (owner_id = auth.uid())
+  with check (owner_id = auth.uid());
+
+create policy "Owners can delete project entries"
+  on public.project_entries for delete
+  to authenticated
+  using (owner_id = auth.uid());
 
 create policy "Members can read photos"
   on public.photos for select
@@ -1408,5 +1593,49 @@ create policy "Users can delete their own avatar objects"
   to authenticated
   using (
     bucket_id = 'connection-avatars'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "Project audio objects can be read by visible members"
+  on storage.objects for select
+  to authenticated
+  using (
+    bucket_id = 'project-audio'
+    and (
+      (storage.foldername(name))[1] = auth.uid()::text
+      or exists (
+        select 1
+        from public.project_entries pe
+        join public.projects p on p.id = pe.project_id
+        where pe.media_path = storage.objects.name
+          and (
+            p.owner_id = auth.uid()
+            or (p.group_id is not null and public.is_group_member(p.group_id, auth.uid()))
+          )
+      )
+    )
+  );
+
+create policy "Users can upload their own project audio objects"
+  on storage.objects for insert
+  to authenticated
+  with check (
+    bucket_id = 'project-audio'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "Users can update their own project audio objects"
+  on storage.objects for update
+  to authenticated
+  using (
+    bucket_id = 'project-audio'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "Users can delete their own project audio objects"
+  on storage.objects for delete
+  to authenticated
+  using (
+    bucket_id = 'project-audio'
     and (storage.foldername(name))[1] = auth.uid()::text
   );

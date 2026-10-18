@@ -15,7 +15,8 @@ const config: Config = {
         line: "#dedbd4",
         moss: "#6f7f5f",
         rust: "#b66345",
-        skysoft: "#8fb8c9"
+        skysoft: "#8fb8c9",
+        clay: "#c17a52"
       },
       boxShadow: {
         soft: "0 20px 60px rgba(21, 21, 21, 0.08)"

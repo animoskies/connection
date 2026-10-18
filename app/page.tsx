@@ -7,10 +7,14 @@ import {
   CalendarDays,
   Camera,
   Check,
+  CheckCircle2,
   ChevronDown,
   Clock3,
   Copy,
+  Dumbbell,
   Download,
+  FileText,
+  FolderOpen,
   HeartHandshake,
   Image as ImageIcon,
   Info,
@@ -20,11 +24,14 @@ import {
   Moon,
   Plus,
   Pencil,
+  Play,
   RefreshCw,
   Search,
   Send,
   Settings,
   Shield,
+  Sparkles,
+  Square,
   Sun,
   Trash2,
   User,
@@ -36,6 +43,7 @@ import { DateTime } from "luxon";
 import { clsx } from "clsx";
 import { createSupabaseClient, hasSupabaseConfig } from "@/lib/supabase";
 import { browserTimezone, timezones } from "@/lib/timezones";
+import type { ProgramSession, WeekDayKey } from "@/lib/companion";
 
 type Profile = {
   id: string;
@@ -68,7 +76,9 @@ type GroupMember = {
 
 type EventItem = {
   id: string;
-  group_id: string;
+  group_id: string | null;
+  owner_id?: string | null;
+  project_id?: string | null;
   title: string;
   description: string | null;
   location: string | null;
@@ -89,7 +99,38 @@ type EventItem = {
 };
 
 type ViewMode = "agenda" | "week" | "month";
-type AppTab = "gallery" | "connections" | "groups" | "calendar" | "profile";
+type AppTab = "gallery" | "connections" | "groups" | "calendar" | "projects" | "profile";
+
+type ProjectType = "fitness" | "writing" | "audio" | "music";
+type ProjectEntryKind = "workout" | "journal" | "draft" | "voice_memo" | "stem" | "lyrics";
+
+type ProjectItem = {
+  id: string;
+  owner_id: string;
+  group_id: string | null;
+  name: string;
+  type: ProjectType;
+  subtype: string | null;
+  settings: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  group_name?: string | null;
+};
+
+type ProjectEntry = {
+  id: string;
+  project_id: string;
+  owner_id: string;
+  kind: ProjectEntryKind;
+  title: string;
+  body: string | null;
+  media_path?: string | null;
+  media_url?: string | null;
+  metadata: Record<string, unknown>;
+  occurred_at: string;
+  created_at: string;
+  updated_at: string;
+};
 
 type PhotoItem = {
   id: string;
@@ -120,6 +161,7 @@ type WorkspaceSnapshot = {
   groups: Group[];
   photos: PhotoItem[];
   profile: Profile;
+  projects: ProjectItem[];
   savedAt: string;
   version: number;
 };
@@ -666,7 +708,7 @@ function downloadCalendarPdf({
         kind: "pill",
         maxChars: 72
       });
-      lines.push({ text: `Group: ${groupNames.get(event.group_id) ?? "Group"}`, size: 11, gap: 16, maxChars: 84 });
+      lines.push({ text: `Group: ${event.group_id ? groupNames.get(event.group_id) ?? "Group" : "Personal"}`, size: 11, gap: 16, maxChars: 84 });
       lines.push({ text: `Your time: ${local.toFormat("ccc, LLL d, yyyy h:mm a")} (${timezone})`, size: 11, gap: 16, maxChars: 84 });
       if (event.location) lines.push({ text: `Location: ${event.location}`, size: 11, gap: 16, maxChars: 84 });
       if (event.reference) lines.push({ text: `Reference: ${referenceHref(event.reference)}`, size: 11, gap: 16, maxChars: 84 });
@@ -744,22 +786,25 @@ function calendarNotificationStyle(notification: GroupNotification) {
 
   if (notification.metadata.action === "deleted") {
     return {
-      card: "border-red-500/30 bg-red-500/[0.06] dark:border-red-300/20 dark:bg-red-400/[0.07]",
-      summary: "bg-red-500/[0.16] text-red-900 dark:bg-red-300/[0.14] dark:text-red-100"
+      card: "",
+      summary:
+        "border border-red-500/15 bg-red-500/[0.07] text-red-700 dark:border-red-300/10 dark:bg-red-300/[0.08] dark:text-red-200"
     };
   }
 
   if (notification.metadata.action === "updated") {
     return {
-      card: "border-sky-500/35 bg-sky-500/[0.07] dark:border-sky-300/25 dark:bg-sky-400/[0.08]",
-      summary: "bg-sky-500/[0.10] text-sky-800 dark:bg-sky-300/[0.10] dark:text-sky-200"
+      card: "",
+      summary:
+        "border border-sky-500/15 bg-sky-500/[0.07] text-sky-700 dark:border-sky-300/10 dark:bg-sky-300/[0.08] dark:text-sky-200"
     };
   }
 
   if (notification.metadata.action === "added") {
     return {
-      card: "border-emerald-500/30 bg-emerald-500/[0.06] dark:border-emerald-300/20 dark:bg-emerald-400/[0.07]",
-      summary: "bg-emerald-500/[0.16] text-emerald-950 dark:bg-emerald-300/[0.14] dark:text-emerald-100"
+      card: "",
+      summary:
+        "border border-emerald-500/15 bg-emerald-500/[0.07] text-emerald-800 dark:border-emerald-300/10 dark:bg-emerald-300/[0.08] dark:text-emerald-200"
     };
   }
 
@@ -969,9 +1014,11 @@ export default function Home() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [viewerWeatherByEventId, setViewerWeatherByEventId] = useState<Record<string, EventWeather>>({});
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
+  const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<AppTab>("connections");
   const [calendarGroupId, setCalendarGroupId] = useState("all");
+  const [projectsScopeId, setProjectsScopeId] = useState("personal");
   const [selectedPhotoId, setSelectedPhotoId] = useState<string | null>(null);
   const [viewerPhotoIds, setViewerPhotoIds] = useState<string[]>([]);
   const [pendingCaptureSrc, setPendingCaptureSrc] = useState<string | null>(null);
@@ -994,6 +1041,8 @@ export default function Home() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [pendingInvite, setPendingInvite] = useState<InvitePreview | null>(null);
+  const [workoutLogEventId, setWorkoutLogEventId] = useState<string | null>(null);
+  const [workoutLogEntries, setWorkoutLogEntries] = useState<{ id: string; project_id: string; metadata: Record<string, unknown> }[]>([]);
   const notificationAreaRef = useRef<HTMLDivElement | null>(null);
   const pullStartRef = useRef<number | null>(null);
 
@@ -1199,6 +1248,7 @@ export default function Home() {
       setEvents([]);
       setViewerWeatherByEventId({});
       setPhotos([]);
+      setProjects([]);
       return;
     }
 
@@ -1236,6 +1286,7 @@ export default function Home() {
         groups,
         photos,
         profile,
+        projects,
         savedAt: new Date().toISOString(),
         version: workspaceCacheVersion
       };
@@ -1256,6 +1307,7 @@ export default function Home() {
     groups,
     photos,
     profile,
+    projects,
     sessionUserId
   ]);
 
@@ -1276,6 +1328,7 @@ export default function Home() {
       setConnections(snapshot.connections ?? []);
       setEvents(snapshot.events ?? []);
       setPhotos(snapshot.photos ?? []);
+      setProjects(snapshot.projects ?? []);
       setLoading(false);
       setProfileChecked(true);
     } catch {
@@ -1303,6 +1356,7 @@ export default function Home() {
     setEvents([]);
     setViewerWeatherByEventId({});
     setPhotos([]);
+    setProjects([]);
     setProfileChecked(false);
   }
 
@@ -1404,8 +1458,20 @@ export default function Home() {
       currentGroupId && loadedGroups.some((group) => group.id === currentGroupId) ? currentGroupId : null
     );
     setCalendarGroupId((currentGroupId) =>
-      currentGroupId === "all" || loadedGroups.some((group) => group.id === currentGroupId) ? currentGroupId : "all"
+      currentGroupId === "all" || currentGroupId === "personal" || loadedGroups.some((group) => group.id === currentGroupId)
+        ? currentGroupId
+        : "all"
     );
+
+    const loadedEvents: EventItem[] = [];
+    const { data: personalEventData, error: personalEventError } = await supabase
+      .from("events")
+      .select("*")
+      .is("group_id", null)
+      .order("starts_at_utc", { ascending: true });
+
+    if (personalEventError) setMessage(personalEventError.message);
+    loadedEvents.push(...((personalEventData ?? []) as EventItem[]));
 
     if (loadedGroups.length) {
       const { data: eventData, error: eventError } = await supabase
@@ -1418,13 +1484,26 @@ export default function Home() {
         .order("starts_at_utc", { ascending: true });
 
       if (eventError) setMessage(eventError.message);
-      setEvents(eventData ?? []);
-      void refreshDueEventWeather(eventData ?? [], profileData?.preferred_timezone ?? profile?.preferred_timezone);
-    } else {
-      setEvents([]);
+      loadedEvents.push(...((eventData ?? []) as EventItem[]));
     }
 
+    const eventsById = new Map(loadedEvents.map((event) => [event.id, event]));
+    const sortedEvents = Array.from(eventsById.values()).sort(
+      (first, second) => DateTime.fromISO(first.starts_at_utc).toMillis() - DateTime.fromISO(second.starts_at_utc).toMillis()
+    );
+    setEvents(sortedEvents);
+
+    const { data: workoutEntryRows } = await supabase.from("project_entries").select("id, project_id, metadata").eq("kind", "workout");
+    setWorkoutLogEntries(workoutEntryRows ?? []);
+
+    // TODO: refreshDueEventWeather fires on every loadWorkspace() call (project saves, program creation,
+    // workout logs, pull-to-refresh, etc. all call reload()), each doing up to 5 external weather lookups.
+    // That's too heavy for how often reload() now runs. Disabled until there's a cheaper trigger for this
+    // (e.g. a server-side cron instead of a client-side check on every reload, or a much longer interval).
+    // void refreshDueEventWeather(sortedEvents, profileData?.preferred_timezone ?? profile?.preferred_timezone);
+
     await loadPhotos();
+    await loadProjects();
     await loadGroupInvites(userId);
     await loadGroupNotifications();
     await loadConnections();
@@ -1872,6 +1951,23 @@ export default function Home() {
     return token ? { Authorization: `Bearer ${token}` } : null;
   }
 
+  async function resetWorkoutLog(event: EventItem) {
+    if (!supabase) return;
+    const entry = workoutLogEntries.find(
+      (row) => row.project_id === event.project_id && (row.metadata as { loggedFromEventId?: string })?.loggedFromEventId === event.id
+    );
+    if (!entry) return;
+    const confirmed = window.confirm(`"${event.title}" is already logged. Reset it so you can log it again?`);
+    if (!confirmed) return;
+    const { error } = await supabase.from("project_entries").delete().eq("id", entry.id);
+    if (error) {
+      setMessage(`Could not reset. ${error.message}`);
+      return;
+    }
+    await loadWorkspace();
+    setMessage("Workout reset.");
+  }
+
   async function loadPhotos() {
     const headers = await authHeaders();
     if (!headers) {
@@ -1888,6 +1984,21 @@ export default function Home() {
     }
 
     setPhotos(payload.photos ?? []);
+  }
+
+  async function loadProjects() {
+    const headers = await authHeaders();
+    if (!headers) return;
+
+    const response = await fetch("/api/projects", { headers });
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      setMessage(payload.error ?? "Could not load projects.");
+      return;
+    }
+
+    setProjects(payload.projects ?? []);
   }
 
   function openPhoto(id: string, sourcePhotos: PhotoItem[]) {
@@ -2141,9 +2252,21 @@ export default function Home() {
     .map((id) => allPhotos.find((photo) => photo.id === id))
     .filter((photo): photo is PhotoItem => Boolean(photo));
   const preferredTimezone = profile?.preferred_timezone ?? browserTimezone();
+  const personalEvents = profile
+    ? events.filter((event) => !event.group_id && (event.owner_id ?? event.creator_id) === profile.id)
+    : [];
   const calendarEvents =
-    calendarGroupId === "all" ? events : events.filter((event) => event.group_id === calendarGroupId);
+    calendarGroupId === "all"
+      ? events
+      : calendarGroupId === "personal"
+        ? personalEvents
+        : events.filter((event) => event.group_id === calendarGroupId);
   const calendarGroup = groups.find((group) => group.id === calendarGroupId) ?? null;
+  const loggedWorkoutEventIds = new Set(
+    workoutLogEntries
+      .map((row) => (row.metadata as { loggedFromEventId?: string })?.loggedFromEventId)
+      .filter((id): id is string => Boolean(id))
+  );
   const unreadGroupNotifications = groupNotifications.filter((notification) => !notification.readAt);
   const unreadConnectionNotifications = connectionNotifications.filter((notification) => !notification.readAt);
   const notificationCount =
@@ -2412,6 +2535,11 @@ export default function Home() {
               setCalendarGroupId(groupId);
               setActiveTab("calendar");
             }}
+            onOpenGroupProjects={(groupId) => {
+              setActiveGroupId(null);
+              setProjectsScopeId(groupId);
+              setActiveTab("projects");
+            }}
             onOpenProfile={openPersonProfile}
             photos={allPhotos}
             profile={profile}
@@ -2424,12 +2552,17 @@ export default function Home() {
 
         {activeTab === "calendar" ? (
           <CalendarView
+            allEvents={events}
             calendarGroup={calendarGroup}
             calendarGroupId={calendarGroupId}
             eventToOpenId={calendarEventToOpenId}
             events={calendarEvents}
             groups={groups}
+            loggedWorkoutEventIds={loggedWorkoutEventIds}
+            onOpenWorkoutLog={(eventId) => setWorkoutLogEventId(eventId)}
+            onResetWorkout={resetWorkoutLog}
             profile={profile}
+            projects={projects}
             reload={() => loadWorkspace()}
             selectedDayEvents={selectedDayEvents}
             selectedDate={selectedDate}
@@ -2442,6 +2575,24 @@ export default function Home() {
             timezone={preferredTimezone}
             viewerWeatherByEventId={viewerWeatherByEventId}
             view={view}
+          />
+        ) : null}
+
+        {activeTab === "projects" ? (
+          <ProjectsView
+            dashboardScope={projectsScopeId}
+            setDashboardScope={setProjectsScopeId}
+            events={events}
+            getAuthHeaders={authHeaders}
+            groups={groups}
+            onOpenWorkoutLog={(eventId) => setWorkoutLogEventId(eventId)}
+            profile={profile}
+            projects={projects}
+            reload={() => loadWorkspace()}
+            reloadProjects={loadProjects}
+            setActiveTab={setActiveTab}
+            setCalendarGroupId={setCalendarGroupId}
+            setMessage={setMessage}
           />
         ) : null}
 
@@ -2528,6 +2679,19 @@ export default function Home() {
           invite={pendingInvite}
           onAccept={() => void acceptInvite(pendingInvite.token)}
           onDecline={() => void declineInvite(pendingInvite.token)}
+        />
+      ) : null}
+      {workoutLogEventId ? (
+        <WorkoutLogSheet
+          event={events.find((event) => event.id === workoutLogEventId) ?? null}
+          getAuthHeaders={authHeaders}
+          onClose={() => setWorkoutLogEventId(null)}
+          onLogged={() => {
+            setWorkoutLogEventId(null);
+            void loadWorkspace();
+          }}
+          profile={profile}
+          setMessage={setMessage}
         />
       ) : null}
     </main>
@@ -2837,6 +3001,7 @@ function GroupsView({
   groups,
   notifyGroupMembers,
   onOpenGroupCalendar,
+  onOpenGroupProjects,
   onOpenProfile,
   openPhoto,
   photos,
@@ -2851,6 +3016,7 @@ function GroupsView({
   groups: Group[];
   notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   onOpenGroupCalendar: (groupId: string) => void;
+  onOpenGroupProjects: (groupId: string) => void;
   onOpenProfile: (profileId: string, displayName?: string) => void;
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
@@ -2882,6 +3048,7 @@ function GroupsView({
           members={groupMembers[activeGroup.id] ?? []}
           notifyGroupMembers={notifyGroupMembers}
           onOpenGroupCalendar={onOpenGroupCalendar}
+          onOpenGroupProjects={onOpenGroupProjects}
           onOpenProfile={onOpenProfile}
           openPhoto={openPhoto}
           photos={selectedGroupPhotos}
@@ -2977,14 +3144,1602 @@ function ProfileView({
   );
 }
 
+const projectTypeOptions: { label: string; value: ProjectType }[] = [
+  { label: "Fitness", value: "fitness" },
+  { label: "Writing", value: "writing" },
+  { label: "Audio", value: "audio" },
+  { label: "Music", value: "music" }
+];
+
+const projectSubtypeOptions: Record<ProjectType, { label: string; value: string }[]> = {
+  fitness: [
+    { label: "Weight training", value: "weight_training" },
+    { label: "Running", value: "running" },
+    { label: "Sport", value: "sport" },
+    { label: "Mobility", value: "mobility" }
+  ],
+  writing: [
+    { label: "Journal", value: "journal" },
+    { label: "Stories", value: "stories" },
+    { label: "Novel", value: "novel" },
+    { label: "Screenplay", value: "screenplay" }
+  ],
+  audio: [
+    { label: "Voice memos", value: "voice_memos" },
+    { label: "Interviews", value: "interviews" },
+    { label: "Field notes", value: "field_notes" }
+  ],
+  music: [
+    { label: "Song", value: "song" },
+    { label: "Instrumental", value: "instrumental" },
+    { label: "Practice", value: "practice" }
+  ]
+};
+
+type ProjectCompanionResult = {
+  title: string;
+  body: string;
+  items: string[];
+  template?: "fitness_workout" | "audio_studio" | "project_notes";
+  workout?: {
+    label: string;
+    date: string;
+    focus: string;
+    summary: string;
+    days: string[];
+    exercises: { name: string; prescription: string }[];
+  };
+  program?: {
+    sessions: { focus: string; summary: string; exercises: { name: string; prescription: string }[] }[];
+  };
+};
+
+function defaultSubtype(type: ProjectType) {
+  return projectSubtypeOptions[type][0]?.value ?? type;
+}
+
+const categoryEmoji: Record<ProjectCategoryKey, string> = {
+  audio: "🎧",
+  fitness: "⚡",
+  writing: "📝"
+};
+
+const subtypeEmoji: Record<string, string> = {
+  field_notes: "🗒️",
+  instrumental: "🎸",
+  interviews: "💬",
+  journal: "📔",
+  mobility: "🧘",
+  novel: "📚",
+  practice: "🔁",
+  running: "🏃",
+  screenplay: "🎬",
+  song: "🎵",
+  sport: "🏆",
+  stories: "📖",
+  voice_memos: "🎙️",
+  weight_training: "🏋️"
+};
+
+function categoryEmojiForType(type: ProjectType): string {
+  if (type === "fitness") return categoryEmoji.fitness;
+  if (type === "writing") return categoryEmoji.writing;
+  return categoryEmoji.audio;
+}
+
+function projectEmoji(type: ProjectType, subtype: string | null): string {
+  return (subtype && subtypeEmoji[subtype]) || categoryEmojiForType(type);
+}
+
+type ProjectCategoryKey = "fitness" | "writing" | "audio";
+
+const projectCategories: { key: ProjectCategoryKey; label: string; hint: string }[] = [
+  { key: "fitness", label: "Fitness", hint: "plans + workouts" },
+  { key: "writing", label: "Writing", hint: "journal + drafts" },
+  { key: "audio", label: "Audio", hint: "voice + music" }
+];
+
+function matchesCategory(project: ProjectItem, key: ProjectCategoryKey) {
+  if (key === "audio") return project.type === "audio" || project.type === "music";
+  return project.type === key;
+}
+
+type WebNode = { kind: "project"; project: ProjectItem } | { kind: "create" };
+
+function ProjectWeb({
+  categories,
+  onCreateProject,
+  onSelectProject,
+  projects
+}: {
+  categories: { key: ProjectCategoryKey; label: string; hint: string }[];
+  onCreateProject: (key: ProjectCategoryKey) => void;
+  onSelectProject: (id: string) => void;
+  projects: ProjectItem[];
+}) {
+  const [activeCategory, setActiveCategory] = useState<ProjectCategoryKey | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{ startX: number; startScrollLeft: number } | null>(null);
+  const activeCategoryProjects = activeCategory ? projects.filter((project) => matchesCategory(project, activeCategory)) : [];
+  const nodes: WebNode[] = [...activeCategoryProjects.map((project) => ({ kind: "project" as const, project })), { kind: "create" as const }];
+  const canvasHeight = 230;
+  const canvasWidth = Math.max(340, 150 + nodes.length * 48);
+  const anchorX = canvasWidth / 2;
+  const anchorY = 34;
+  const radius = Math.min(150, 84 + nodes.length * 5);
+  const squishY = 0.6;
+  const spread = nodes.length <= 1 ? 0 : Math.min(150, 26 * (nodes.length - 1));
+  const positions = nodes.map((node, index) => {
+    const angleDeg = nodes.length === 1 ? 0 : -spread / 2 + index * (spread / (nodes.length - 1));
+    const angleRad = (angleDeg * Math.PI) / 180;
+    return {
+      node,
+      x: anchorX + radius * Math.sin(angleRad),
+      y: anchorY + radius * Math.cos(angleRad) * squishY
+    };
+  });
+
+  useEffect(() => {
+    if (!activeCategory || !scrollRef.current) return;
+    const el = scrollRef.current;
+    el.scrollLeft = Math.max(0, (canvasWidth - el.clientWidth) / 2);
+  }, [activeCategory, canvasWidth]);
+
+  function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.pointerType !== "mouse" || !scrollRef.current) return;
+    dragRef.current = { startScrollLeft: scrollRef.current.scrollLeft, startX: event.clientX };
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current || !scrollRef.current) return;
+    scrollRef.current.scrollLeft = dragRef.current.startScrollLeft - (event.clientX - dragRef.current.startX);
+  }
+
+  function handlePointerUp() {
+    dragRef.current = null;
+  }
+
+  return (
+    <div className="grid gap-1">
+      <div className="flex justify-center gap-3 py-2 sm:gap-6">
+        {categories.map((category) => {
+          const isActive = category.key === activeCategory;
+          const count = projects.filter((project) => matchesCategory(project, category.key)).length;
+          return (
+            <button
+              key={category.key}
+              className="flex flex-col items-center gap-1.5"
+              onClick={() => setActiveCategory((current) => (current === category.key ? null : category.key))}
+              type="button"
+            >
+              <span
+                className={clsx(
+                  "grid h-16 w-16 place-items-center rounded-full border-2 text-2xl transition-all",
+                  isActive
+                    ? "web-node-active scale-105 border-clay bg-clay/20"
+                    : "border-line bg-white/70 dark:border-white/15 dark:bg-white/[0.03]"
+                )}
+              >
+                {categoryEmoji[category.key]}
+              </span>
+              <span className={clsx("text-xs font-semibold", isActive ? "text-ink dark:text-paper" : "text-ink/55 dark:text-paper/55")}>
+                {category.label}
+              </span>
+              <span className="text-[10px] text-ink/40 dark:text-paper/40">{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {activeCategory ? (
+        <div
+          key={activeCategory}
+          ref={scrollRef}
+          className="cursor-grab overflow-x-auto active:cursor-grabbing"
+          onPointerDown={handlePointerDown}
+          onPointerLeave={handlePointerUp}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+        >
+          <div className="relative text-clay" style={{ height: canvasHeight, width: canvasWidth }}>
+            <svg className="absolute inset-0 h-full w-full overflow-visible" viewBox={`0 0 ${canvasWidth} ${canvasHeight}`}>
+              <line
+                className="web-line"
+                pathLength={1}
+                stroke="currentColor"
+                strokeWidth={2}
+                vectorEffect="non-scaling-stroke"
+                x1={anchorX}
+                x2={anchorX}
+                y1={0}
+                y2={anchorY}
+              />
+              {positions.map(({ x, y }, index) => (
+                <line
+                  key={index}
+                  className="web-line"
+                  pathLength={1}
+                  stroke="currentColor"
+                  strokeWidth={1.5}
+                  style={{ animationDelay: `${index * 70}ms` }}
+                  vectorEffect="non-scaling-stroke"
+                  x1={anchorX}
+                  x2={x}
+                  y1={anchorY}
+                  y2={y}
+                />
+              ))}
+            </svg>
+            {positions.map(({ node, x, y }, index) => {
+              const isCreate = node.kind === "create";
+              return (
+                <button
+                  key={isCreate ? "create" : node.project.id}
+                  className="web-node-pop absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1"
+                  style={{ animationDelay: `${index * 70 + 120}ms`, left: x, top: y }}
+                  onClick={() => (isCreate ? onCreateProject(activeCategory) : onSelectProject(node.project.id))}
+                  type="button"
+                >
+                  <span
+                    className={clsx(
+                      "grid h-12 w-12 place-items-center rounded-full border-2 text-xl shadow-soft",
+                      isCreate
+                        ? "border-dashed border-clay/60 bg-white/70 text-clay dark:bg-[#1d1d1a]"
+                        : "border-line bg-white dark:border-white/15 dark:bg-[#242420]"
+                    )}
+                  >
+                    {isCreate ? <Plus size={18} /> : projectEmoji(node.project.type, node.project.subtype)}
+                  </span>
+                  <span className="max-w-[4.5rem] truncate text-center text-[11px] font-medium text-ink/70 dark:text-paper/70">
+                    {isCreate ? "new" : node.project.name}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+const WEEKDAY_KEYS: WeekDayKey[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const WEEKDAY_OPTIONS: { key: WeekDayKey; label: string }[] = [
+  { key: "mon", label: "Mon" },
+  { key: "tue", label: "Tue" },
+  { key: "wed", label: "Wed" },
+  { key: "thu", label: "Thu" },
+  { key: "fri", label: "Fri" },
+  { key: "sat", label: "Sat" },
+  { key: "sun", label: "Sun" }
+];
+
+function playMetronomeClick(audioContext: AudioContext, accent: boolean) {
+  const oscillator = audioContext.createOscillator();
+  const gain = audioContext.createGain();
+  oscillator.frequency.value = accent ? 1000 : 700;
+  gain.gain.setValueAtTime(0.28, audioContext.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.05);
+  oscillator.connect(gain);
+  gain.connect(audioContext.destination);
+  oscillator.start();
+  oscillator.stop(audioContext.currentTime + 0.05);
+}
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function ProjectsView({
+  dashboardScope,
+  setDashboardScope,
+  events,
+  getAuthHeaders,
+  groups,
+  onOpenWorkoutLog,
+  profile,
+  projects,
+  reload,
+  reloadProjects,
+  setActiveTab,
+  setCalendarGroupId,
+  setMessage
+}: {
+  dashboardScope: string;
+  setDashboardScope: (id: string) => void;
+  events: EventItem[];
+  getAuthHeaders: (options?: { refresh?: boolean }) => Promise<{ Authorization: string } | null>;
+  groups: Group[];
+  onOpenWorkoutLog: (eventId: string) => void;
+  profile: Profile;
+  projects: ProjectItem[];
+  reload: WorkspaceReload;
+  reloadProjects: () => Promise<void>;
+  setActiveTab: (tab: AppTab) => void;
+  setCalendarGroupId: (id: string) => void;
+  setMessage: (value: string) => void;
+}) {
+  const [creating, setCreating] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [entries, setEntries] = useState<ProjectEntry[]>([]);
+  const [entriesLoading, setEntriesLoading] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [projectType, setProjectType] = useState<ProjectType>("fitness");
+  const [lockedProjectType, setLockedProjectType] = useState<ProjectType | null>(null);
+  const [projectSubtype, setProjectSubtype] = useState(defaultSubtype("fitness"));
+  const [projectScope, setProjectScope] = useState("personal");
+  const [entryTitle, setEntryTitle] = useState("");
+  const [entryBody, setEntryBody] = useState("");
+  const [programOpen, setProgramOpen] = useState(false);
+  const [programStep, setProgramStep] = useState<1 | 2 | 3 | 4>(1);
+  const [programStartDate, setProgramStartDate] = useState(DateTime.now().setZone(profile.preferred_timezone).toISODate() ?? "");
+  const [programWeeks, setProgramWeeks] = useState(4);
+  const [programSelectedDays, setProgramSelectedDays] = useState<WeekDayKey[]>([]);
+  const [programTimeMode, setProgramTimeMode] = useState<"same" | "per-day">("same");
+  const [programSameTime, setProgramSameTime] = useState("07:00");
+  const [programPerDayTimes, setProgramPerDayTimes] = useState<Partial<Record<WeekDayKey, string>>>({});
+  const [programNote, setProgramNote] = useState("");
+  const [creatingProgram, setCreatingProgram] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [audioUrl, setAudioUrl] = useState("");
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [metronomeOn, setMetronomeOn] = useState(true);
+  const [countingIn, setCountingIn] = useState<number | null>(null);
+  const [instrument, setInstrument] = useState("");
+  const [playStemsWhileRecording, setPlayStemsWhileRecording] = useState(true);
+  const [savingProject, setSavingProject] = useState(false);
+  const [savingEntry, setSavingEntry] = useState(false);
+  const [companionPrompt, setCompanionPrompt] = useState("");
+  const [companionResult, setCompanionResult] = useState<ProjectCompanionResult | null>(null);
+  const [askingCompanion, setAskingCompanion] = useState(false);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<BlobPart[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const metronomeTimerRef = useRef<number | null>(null);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
+  const playbackAudiosRef = useRef<HTMLAudioElement[]>([]);
+
+  const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
+  const dashboardProjects = projects.filter((project) =>
+    dashboardScope === "personal" ? !project.group_id : project.group_id === dashboardScope
+  );
+  const canUseCompanion = selectedProject?.type === "fitness" || selectedProject?.type === "music" || selectedProject?.type === "audio";
+  const stemEntries = entries.filter((entry) => entry.kind === "stem");
+  const voiceMemoEntries = entries.filter((entry) => entry.kind === "voice_memo");
+  const logEntries = entries.filter((entry) => entry.kind !== "stem" && entry.kind !== "voice_memo");
+  const recordedTime = `${String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:${String(recordingSeconds % 60).padStart(2, "0")}`;
+  const fitnessEvents = selectedProject
+    ? events.filter((event) => event.project_id === selectedProject.id).sort((a, b) => a.starts_at_utc.localeCompare(b.starts_at_utc))
+    : [];
+  const upcomingFitnessEvents = fitnessEvents.filter((event) => DateTime.fromISO(event.starts_at_utc).toMillis() >= DateTime.now().toMillis());
+  const orderedProgramDays = WEEKDAY_KEYS.filter((key) => programSelectedDays.includes(key));
+  const generatedSessions = companionResult?.program?.sessions ?? [];
+
+  useEffect(() => {
+    if (selectedProjectId && !projects.some((project) => project.id === selectedProjectId)) setSelectedProjectId("");
+  }, [projects, selectedProjectId]);
+
+  useEffect(() => {
+    setProjectSubtype(defaultSubtype(projectType));
+  }, [projectType]);
+
+  useEffect(() => {
+    if (!selectedProject?.id) {
+      setEntries([]);
+      return;
+    }
+    void loadEntries(selectedProject.id);
+  }, [selectedProject?.id]);
+
+  useEffect(() => {
+    setCompanionResult(null);
+    setProgramOpen(false);
+    setProgramStep(1);
+    setProgramSelectedDays([]);
+    setProgramNote("");
+    recorderRef.current?.stop();
+    if (metronomeTimerRef.current) {
+      window.clearInterval(metronomeTimerRef.current);
+      metronomeTimerRef.current = null;
+    }
+    playbackAudiosRef.current.forEach((audioEl) => audioEl.pause());
+    playbackAudiosRef.current = [];
+    void wakeLockRef.current?.release().catch(() => {});
+    wakeLockRef.current = null;
+    setRecording(false);
+    setCountingIn(null);
+    setAudioUrl("");
+    setAudioBlob(null);
+    setInstrument("");
+  }, [selectedProject?.id, selectedProject?.type]);
+
+  useEffect(() => {
+    if (!recording) return;
+    const timer = window.setInterval(() => setRecordingSeconds((current) => current + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [recording]);
+
+  async function loadEntries(projectId = selectedProjectId) {
+    if (!projectId) return;
+    const headers = await getAuthHeaders();
+    if (!headers) return;
+    setEntriesLoading(true);
+    try {
+      const response = await fetch(`/api/projects/${projectId}/entries`, { headers });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(payload.error ?? "Could not load project entries.");
+        return;
+      }
+      setEntries(payload.entries ?? []);
+    } finally {
+      setEntriesLoading(false);
+    }
+  }
+
+  async function createProject(event: FormEvent) {
+    event.preventDefault();
+    if (savingProject || !projectName.trim()) return;
+    const headers = await getAuthHeaders();
+    if (!headers) return;
+    const storedType = projectSubtype === "music" ? "music" : projectType;
+    setSavingProject(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/projects", {
+        body: JSON.stringify({
+          groupId: projectScope === "personal" ? null : projectScope,
+          name: projectName.trim(),
+          settings: storedType === "music" ? { bars: 8, bpm: 120 } : {},
+          subtype: projectSubtype,
+          type: storedType
+        }),
+        headers: { ...headers, "content-type": "application/json" },
+        method: "POST"
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(payload.error ?? "Could not create project.");
+        return;
+      }
+      await reloadProjects();
+      setSelectedProjectId(payload.project?.id ?? selectedProjectId);
+      setProjectName("");
+      setCreating(false);
+      setMessage("Project created.");
+    } finally {
+      setSavingProject(false);
+    }
+  }
+
+  async function saveProjectEntry({
+    body,
+    kind,
+    occurredAt,
+    title
+  }: {
+    body?: string | null;
+    kind: ProjectEntryKind;
+    occurredAt: string;
+    title: string;
+  }) {
+    if (!selectedProject || savingEntry || !title.trim()) return;
+    const headers = await getAuthHeaders();
+    if (!headers) return;
+    setSavingEntry(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/projects/${selectedProject.id}/entries`, {
+        body: JSON.stringify({
+          body: body?.trim() || null,
+          kind,
+          metadata: {
+            source: selectedProject.type,
+            timezone: profile.preferred_timezone
+          },
+          occurredAt,
+          title: title.trim()
+        }),
+        headers: { ...headers, "content-type": "application/json" },
+        method: "POST"
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(payload.error ?? "Could not save project entry.");
+        return;
+      }
+
+      setEntryTitle("");
+      setEntryBody("");
+      await loadEntries(selectedProject.id);
+      await reload();
+      setMessage("Project entry saved.");
+    } finally {
+      setSavingEntry(false);
+    }
+  }
+
+  function toggleProgramDay(day: WeekDayKey) {
+    setProgramSelectedDays((current) => (current.includes(day) ? current.filter((item) => item !== day) : [...current, day]));
+  }
+
+  async function generateProgramSessions() {
+    if (!selectedProject || !programSelectedDays.length) return;
+    await askCompanion(selectedProject.id, programNote, programSelectedDays.length, generatedSessions.length ? generatedSessions : undefined);
+    setProgramStep(4);
+  }
+
+  async function confirmProgram() {
+    const sessions = companionResult?.program?.sessions;
+    if (!selectedProject || !supabase || !sessions?.length || creatingProgram) return;
+    setCreatingProgram(true);
+    setMessage("");
+    try {
+      const start = DateTime.fromISO(programStartDate, { zone: profile.preferred_timezone }).startOf("day");
+      const end = start.plus({ weeks: programWeeks }).minus({ days: 1 });
+      const rows: Record<string, unknown>[] = [];
+      let cursor = start;
+      let occurrence = 0;
+      while (cursor <= end) {
+        const dayKey = WEEKDAY_KEYS[cursor.weekday - 1];
+        if (orderedProgramDays.includes(dayKey)) {
+          const session = sessions[occurrence % sessions.length];
+          occurrence += 1;
+          const time = programTimeMode === "same" ? programSameTime : programPerDayTimes[dayKey] || programSameTime;
+          const [hour, minute] = time.split(":").map(Number);
+          const startsAt = cursor.set({ hour: hour || 0, minute: minute || 0 }).toUTC().toISO();
+          if (startsAt) {
+            rows.push({
+              creator_id: profile.id,
+              description: session.exercises.map((exercise) => `${exercise.name}: ${exercise.prescription}`).join("\n"),
+              group_id: selectedProject.group_id,
+              location: null,
+              owner_id: profile.id,
+              project_id: selectedProject.id,
+              reference: null,
+              source_timezone: profile.preferred_timezone,
+              starts_at_utc: startsAt,
+              title: session.focus
+            });
+          }
+        }
+        cursor = cursor.plus({ days: 1 });
+      }
+
+      if (!rows.length) {
+        setMessage("No sessions fell inside that date range.");
+        return;
+      }
+
+      const { error } = await supabase.from("events").insert(rows);
+      if (error) {
+        setMessage(`Could not add program to calendar. ${error.message}`);
+        return;
+      }
+
+      setProgramOpen(false);
+      setProgramStep(1);
+      setCompanionResult(null);
+      await reload();
+      setMessage(`Program added — ${rows.length} sessions on your calendar.`);
+    } finally {
+      setCreatingProgram(false);
+    }
+  }
+
+  async function saveWritingPage() {
+    const timestamp = DateTime.now().setZone(profile.preferred_timezone).toUTC().toISO() ?? new Date().toISOString();
+    await saveProjectEntry({
+      body: entryBody,
+      kind: selectedProject?.subtype === "journal" ? "journal" : "draft",
+      occurredAt: timestamp,
+      title: entryTitle.trim() || DateTime.now().setZone(profile.preferred_timezone).toFormat("LLL d")
+    });
+  }
+
+  async function saveAudioNote() {
+    if (!selectedProject || !audioBlob || savingEntry || !supabase) return;
+    const headers = await getAuthHeaders();
+    if (!headers) return;
+    const isMusic = selectedProject.type === "music";
+    setSavingEntry(true);
+    setMessage("");
+    try {
+      const mediaPath = `${profile.id}/${crypto.randomUUID()}.webm`;
+      const { error: uploadError } = await supabase.storage.from("project-audio").upload(mediaPath, audioBlob, {
+        contentType: "audio/webm",
+        upsert: false
+      });
+      if (uploadError) {
+        setMessage(`Failed to save recording. ${uploadError.message}`);
+        return;
+      }
+
+      const timestamp = DateTime.now().setZone(profile.preferred_timezone).toUTC().toISO() ?? new Date().toISOString();
+      const response = await fetch(`/api/projects/${selectedProject.id}/entries`, {
+        body: JSON.stringify({
+          body: entryBody.trim() || null,
+          kind: isMusic ? "stem" : "voice_memo",
+          mediaPath,
+          metadata: isMusic ? { instrument: instrument || "other" } : {},
+          occurredAt: timestamp,
+          title:
+            entryTitle.trim() ||
+            (isMusic ? `take ${stemEntries.length + 1}` : `voice memo ${DateTime.now().setZone(profile.preferred_timezone).toFormat("LLL d, h:mm a")}`)
+        }),
+        headers: { ...headers, "content-type": "application/json" },
+        method: "POST"
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(payload.error ?? "Could not save recording.");
+        await supabase.storage.from("project-audio").remove([mediaPath]);
+        return;
+      }
+
+      setEntryTitle("");
+      setEntryBody("");
+      setInstrument("");
+      setAudioBlob(null);
+      setAudioUrl("");
+      await loadEntries(selectedProject.id);
+      setMessage(isMusic ? "Stem saved." : "Recording saved.");
+    } finally {
+      setSavingEntry(false);
+    }
+  }
+
+  async function deleteProject(project: ProjectItem) {
+    if (!window.confirm(`Delete ${project.name}?`)) return;
+    const headers = await getAuthHeaders();
+    if (!headers) return;
+    const response = await fetch(`/api/projects/${project.id}`, { headers, method: "DELETE" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(payload.error ?? "Could not delete project.");
+      return;
+    }
+    setSelectedProjectId("");
+    await reloadProjects();
+    await reload();
+    setMessage("Project deleted.");
+  }
+
+  async function deleteProjectEntry(entry: ProjectEntry) {
+    if (!selectedProject || !window.confirm(`Delete ${entry.title}?`)) return;
+    const headers = await getAuthHeaders();
+    if (!headers) return;
+    const response = await fetch(`/api/projects/${selectedProject.id}/entries/${entry.id}`, { headers, method: "DELETE" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(payload.error ?? "Could not delete entry.");
+      return;
+    }
+    await loadEntries(selectedProject.id);
+    setMessage("Entry deleted.");
+  }
+
+  async function askCompanion(
+    projectId = selectedProject?.id ?? "",
+    prompt = companionPrompt,
+    daysPerWeek?: number,
+    previousSessions?: ProgramSession[]
+  ) {
+    if (!projectId || !canUseCompanion || askingCompanion) return;
+    const headers = await getAuthHeaders();
+    if (!headers) return;
+    setAskingCompanion(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/ai/companion", {
+        body: JSON.stringify({ daysPerWeek, previousSessions, projectId, prompt }),
+        headers: { ...headers, "content-type": "application/json" },
+        method: "POST"
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(payload.error ?? "Companion could not answer.");
+        return;
+      }
+      setCompanionResult(payload.result ?? null);
+    } finally {
+      setAskingCompanion(false);
+    }
+  }
+
+  function openProjectCalendar(project: ProjectItem) {
+    setCalendarGroupId(project.group_id ?? "personal");
+    setActiveTab("calendar");
+  }
+
+  function stopEverything() {
+    if (metronomeTimerRef.current) {
+      window.clearInterval(metronomeTimerRef.current);
+      metronomeTimerRef.current = null;
+    }
+    playbackAudiosRef.current.forEach((audioEl) => audioEl.pause());
+    playbackAudiosRef.current = [];
+    void wakeLockRef.current?.release().catch(() => {});
+    wakeLockRef.current = null;
+  }
+
+  async function toggleRecording() {
+    if (recording) {
+      recorderRef.current?.stop();
+      return;
+    }
+    if (countingIn !== null) return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setMessage("Audio recording is not available in this browser.");
+      return;
+    }
+
+    const isMusic = selectedProject?.type === "music";
+    const bpm = Number(selectedProject?.settings?.bpm ?? 120) || 120;
+    const beatMs = 60000 / bpm;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      if (isMusic && metronomeOn) {
+        if (!audioContextRef.current) {
+          audioContextRef.current = new AudioContext();
+        }
+        const audioContext = audioContextRef.current;
+        if (audioContext.state === "suspended") await audioContext.resume();
+
+        for (let beat = 4; beat >= 1; beat--) {
+          setCountingIn(beat);
+          playMetronomeClick(audioContext, beat === 4);
+          await wait(beatMs);
+        }
+        setCountingIn(null);
+      }
+
+      if ("wakeLock" in navigator) {
+        try {
+          wakeLockRef.current = await navigator.wakeLock.request("screen");
+        } catch {
+          wakeLockRef.current = null;
+        }
+      }
+
+      if (isMusic && playStemsWhileRecording && stemEntries.length) {
+        playbackAudiosRef.current = stemEntries
+          .filter((entry) => entry.media_url)
+          .map((entry) => {
+            const audioEl = new Audio(entry.media_url ?? "");
+            void audioEl.play().catch(() => {});
+            return audioEl;
+          });
+      }
+
+      chunksRef.current = [];
+      const recorder = new MediaRecorder(stream);
+      recorder.ondataavailable = (event) => {
+        if (event.data.size) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        setAudioBlob(blob);
+        setAudioUrl(URL.createObjectURL(blob));
+        stream.getTracks().forEach((track) => track.stop());
+        stopEverything();
+        setRecording(false);
+      };
+      recorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+      setRecordingSeconds(0);
+
+      if (isMusic && metronomeOn && audioContextRef.current) {
+        const audioContext = audioContextRef.current;
+        let beatCount = 0;
+        metronomeTimerRef.current = window.setInterval(() => {
+          playMetronomeClick(audioContext, beatCount % 4 === 0);
+          beatCount += 1;
+        }, beatMs);
+      }
+    } catch {
+      setCountingIn(null);
+      stopEverything();
+      setMessage("Could not access microphone.");
+    }
+  }
+
+  function playAllStems() {
+    stemEntries.forEach((entry) => {
+      if (!entry.media_url) return;
+      const audioEl = new Audio(entry.media_url);
+      void audioEl.play().catch(() => {});
+    });
+  }
+
+  return (
+    <section className="flex flex-col gap-5">
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Projects</h1>
+        <button
+          className="inline-flex items-center gap-2 rounded-full border border-line px-4 py-2 text-sm font-semibold dark:border-white/15"
+          onClick={() => {
+            setLockedProjectType(null);
+            setCreating(true);
+          }}
+          type="button"
+        >
+          <Plus size={16} />
+          Create new
+        </button>
+      </div>
+
+      {creating ? (
+        <div className="session-fullscreen-in fixed inset-0 z-50 flex flex-col overflow-y-auto bg-paper text-ink dark:bg-[#151515] dark:text-paper">
+          <form className="mx-auto flex w-full max-w-lg flex-1 flex-col px-4 pb-6" onSubmit={createProject}>
+            <div className="flex items-center justify-between gap-3 py-4 pt-[calc(0.75rem+env(safe-area-inset-top))]">
+              <div className="flex items-center gap-2">
+                <FolderOpen size={18} />
+                <h2 className="text-lg font-semibold">{lockedProjectType ? `new ${lockedProjectType} project` : "new project"}</h2>
+              </div>
+              <button
+                className="grid h-10 w-10 place-items-center rounded-full border border-line dark:border-white/15"
+                onClick={() => {
+                  setCreating(false);
+                  setLockedProjectType(null);
+                }}
+                type="button"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="grid gap-3">
+              <Field label="Name" value={projectName} onChange={setProjectName} required placeholder="morning strength" />
+              {lockedProjectType ? null : (
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { type: "fitness" as ProjectType, label: "fitness", hint: "plans + workouts" },
+                    { type: "writing" as ProjectType, label: "writing", hint: "journal + drafts" },
+                    { type: "audio" as ProjectType, label: "audio", hint: "voice + music" }
+                  ].map((option) => (
+                    <button
+                      key={option.type}
+                      className={clsx(
+                        "rounded-2xl border p-3 text-left",
+                        projectType === option.type
+                          ? "border-paper bg-ink text-paper dark:border-paper dark:bg-paper dark:text-ink"
+                          : "border-line bg-white/60 dark:border-white/15 dark:bg-white/5"
+                      )}
+                      onClick={() => setProjectType(option.type)}
+                      type="button"
+                    >
+                      <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-full bg-clay/18 text-lg">
+                        {categoryEmojiForType(option.type)}
+                      </div>
+                      <p className="font-semibold">{option.label}</p>
+                      <p className="mt-1 text-[11px] opacity-65">{option.hint}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Template
+                <select
+                  className="rounded-full border border-line bg-white px-3 py-2 text-sm text-ink outline-none dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+                  value={projectSubtype}
+                  onChange={(event) => setProjectSubtype(event.target.value)}
+                >
+                  {(projectType === "audio"
+                    ? [
+                        ...projectSubtypeOptions.audio,
+                        { label: "Music", value: "music" }
+                      ]
+                    : projectSubtypeOptions[projectType]
+                  ).map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-sm font-medium">
+                Scope
+                <select
+                  className="rounded-full border border-line bg-white px-3 py-2 text-sm text-ink outline-none dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+                  value={projectScope}
+                  onChange={(event) => setProjectScope(event.target.value)}
+                >
+                  <option value="personal">Personal</option>
+                  {groups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="rounded-full bg-ink px-4 py-3 font-semibold text-paper dark:bg-paper dark:text-ink" disabled={savingProject}>
+                {savingProject ? "Creating..." : "Create project"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {!selectedProject ? (
+        <div className="grid gap-4">
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            <button
+              className={clsx(
+                "shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition",
+                dashboardScope === "personal"
+                  ? "border-ink bg-ink text-paper dark:border-paper dark:bg-paper dark:text-ink"
+                  : "border-line text-ink/60 dark:border-white/15 dark:text-paper/60"
+              )}
+              onClick={() => setDashboardScope("personal")}
+              type="button"
+            >
+              Personal
+            </button>
+            {groups.map((group) => (
+              <button
+                key={group.id}
+                className={clsx(
+                  "shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition",
+                  dashboardScope === group.id
+                    ? "border-ink bg-ink text-paper dark:border-paper dark:bg-paper dark:text-ink"
+                    : "border-line text-ink/60 dark:border-white/15 dark:text-paper/60"
+                )}
+                onClick={() => setDashboardScope(group.id)}
+                type="button"
+              >
+                {group.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="rounded-3xl border border-line bg-white/70 p-4 dark:border-white/15 dark:bg-white/[0.03]">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-clay">
+              {dashboardScope === "personal" ? "Personal" : groups.find((group) => group.id === dashboardScope)?.name ?? "Group"}
+            </p>
+            <p className="mt-1 text-2xl font-semibold">
+              {dashboardProjects.length} project{dashboardProjects.length === 1 ? "" : "s"}
+            </p>
+          </div>
+
+          <ProjectWeb
+            categories={projectCategories}
+            onCreateProject={(key) => {
+              const type = key === "audio" ? "audio" : key;
+              setProjectType(type);
+              setLockedProjectType(type);
+              setProjectScope(dashboardScope);
+              setCreating(true);
+            }}
+            onSelectProject={(id) => {
+              setSelectedProjectId(id);
+              setCompanionResult(null);
+            }}
+            projects={dashboardProjects}
+          />
+        </div>
+      ) : null}
+
+      {selectedProject ? (
+        <section className="grid gap-4">
+          <div className="flex items-center justify-between gap-3 border-b border-line pb-4 dark:border-white/10">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 items-start gap-3">
+                <button className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-line dark:border-white/15" onClick={() => setSelectedProjectId("")} type="button" aria-label="Back to projects">
+                  <ArrowLeft size={19} />
+                </button>
+                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-clay/18 text-xl">
+                  {projectEmoji(selectedProject.type, selectedProject.subtype)}
+                </div>
+                <div className="min-w-0">
+                  <h2 className="truncate text-xl font-semibold">{selectedProject.name}</h2>
+                  <p className="text-sm text-ink/55 dark:text-paper/55">
+                    {selectedProject.group_name ? `${selectedProject.group_name} project` : "personal project"} / {selectedProject.subtype?.replaceAll("_", " ") ?? selectedProject.type}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button className="grid h-10 w-10 place-items-center rounded-full border border-line dark:border-white/15" onClick={() => openProjectCalendar(selectedProject)} type="button" aria-label="Open project calendar">
+                <CalendarDays size={17} />
+              </button>
+              {selectedProject.owner_id === profile.id ? (
+                <button className="grid h-10 w-10 place-items-center rounded-full border border-line text-clay dark:border-white/15" onClick={() => deleteProject(selectedProject)} type="button" aria-label="Delete project">
+                  <Trash2 size={17} />
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          {selectedProject.type === "fitness" ? (
+            <section className="grid gap-4">
+              {fitnessEvents.length ? (
+                <div className="rounded-3xl border border-line bg-white/80 p-4 shadow-soft dark:border-white/15 dark:bg-[#242420]">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-clay">your program</p>
+                      <p className="mt-1 text-lg font-semibold">
+                        {upcomingFitnessEvents.length} upcoming session{upcomingFitnessEvents.length === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                    <button
+                      className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-xs font-semibold dark:border-white/15"
+                      onClick={() => {
+                        setProgramStep(1);
+                        setProgramOpen(true);
+                      }}
+                      type="button"
+                    >
+                      <Sparkles size={13} /> build a new program
+                    </button>
+                  </div>
+                  <div className="grid gap-2">
+                    {upcomingFitnessEvents.slice(0, 5).map((event) => (
+                      <button
+                        key={event.id}
+                        className="flex items-center justify-between gap-3 rounded-2xl border border-line bg-paper/55 p-3 text-left dark:border-white/10 dark:bg-[#1d1d1a]"
+                        onClick={() => onOpenWorkoutLog(event.id)}
+                        type="button"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate font-semibold capitalize">{event.title}</span>
+                          <span className="block text-xs text-ink/50 dark:text-paper/50">
+                            {DateTime.fromISO(event.starts_at_utc).setZone(profile.preferred_timezone).toFormat("cccc, LLL d · h:mm a")}
+                          </span>
+                        </span>
+                        <span className="shrink-0 rounded-full border border-line px-2.5 py-1 text-[11px] font-semibold text-ink/60 dark:border-white/15 dark:text-paper/60">
+                          log it
+                        </span>
+                      </button>
+                    ))}
+                    {!upcomingFitnessEvents.length ? (
+                      <p className="text-sm text-ink/50 dark:text-paper/50">No sessions left in this program — build a new one when you're ready.</p>
+                    ) : null}
+                  </div>
+                  <button
+                    className="mt-3 inline-flex items-center gap-2 rounded-full border border-line px-3 py-2 text-sm font-semibold dark:border-white/15"
+                    onClick={() => {
+                      setCalendarGroupId(selectedProject.group_id ?? "personal");
+                      setActiveTab("calendar");
+                    }}
+                    type="button"
+                  >
+                    <CalendarDays size={14} /> view full program on calendar
+                  </button>
+                </div>
+              ) : (
+                <div className="rounded-3xl border border-line bg-white/80 p-6 text-center shadow-soft dark:border-white/15 dark:bg-[#242420]">
+                  <Sparkles className="mx-auto text-clay" size={28} />
+                  <h2 className="mt-3 text-xl font-semibold">build your program</h2>
+                  <p className="mx-auto mt-2 max-w-xs text-sm text-ink/55 dark:text-paper/55">
+                    tell companion your schedule and it will build a rotation and put every session on your calendar. tap a session there when you want to log it.
+                  </p>
+                  <button
+                    className="mt-4 rounded-full bg-ink px-5 py-3 text-sm font-semibold text-paper dark:bg-paper dark:text-ink"
+                    onClick={() => {
+                      setProgramStep(1);
+                      setProgramOpen(true);
+                    }}
+                    type="button"
+                  >
+                    start
+                  </button>
+                </div>
+              )}
+
+              {programOpen ? (
+                <div
+                  className="session-fullscreen-in fixed inset-0 z-50 flex flex-col bg-paper text-ink dark:bg-[#151515] dark:text-paper"
+                >
+                  <div
+                    className="mx-auto flex min-h-0 w-full max-w-lg flex-1 flex-col"
+                  >
+                    <div className="shrink-0 border-b border-line px-4 pb-4 pt-[calc(0.75rem+env(safe-area-inset-top))] dark:border-white/10">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="flex items-center gap-2 text-lg font-semibold">
+                        <Sparkles size={18} className="text-clay" /> build your program
+                        </p>
+                        <button aria-label="Close program builder" className="grid h-9 w-9 place-items-center rounded-full border border-line dark:border-white/15" onClick={() => setProgramOpen(false)} type="button">
+                          <X size={16} />
+                        </button>
+                      </div>
+                      <div className="mt-4 grid grid-cols-4 gap-1.5" aria-label={`Step ${programStep} of 4`}>
+                        {[1, 2, 3, 4].map((step) => (
+                          <span key={step} className={clsx("h-1 rounded-full", step <= programStep ? "bg-clay" : "bg-ink/10 dark:bg-white/10")} />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+
+                    {programStep === 1 ? (
+                      <div className="flex min-h-full flex-col gap-5">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-clay">step 1</p>
+                          <h2 className="mt-2 text-2xl font-semibold">first, what date range?</h2>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <label className="flex min-w-0 flex-col gap-2 rounded-xl border border-line bg-white/70 p-3 text-sm font-medium dark:border-white/15 dark:bg-white/[0.04]">
+                            start date
+                            <input
+                              className="min-w-0 bg-transparent text-sm outline-none"
+                              onChange={(event) => setProgramStartDate(event.target.value)}
+                              type="date"
+                              value={programStartDate}
+                            />
+                          </label>
+                          <label className="flex min-w-0 flex-col gap-2 rounded-xl border border-line bg-white/70 p-3 text-sm font-medium dark:border-white/15 dark:bg-white/[0.04]">
+                            how many weeks?
+                            <input
+                              className="min-w-0 bg-transparent text-sm outline-none"
+                              max={26}
+                              min={1}
+                              onChange={(event) => setProgramWeeks(Math.max(1, Math.min(26, Number(event.target.value) || 1)))}
+                              type="number"
+                              value={programWeeks}
+                            />
+                          </label>
+                        </div>
+                        <button className="mt-auto rounded-full bg-ink px-4 py-3 text-sm font-semibold text-paper dark:bg-paper dark:text-ink" onClick={() => setProgramStep(2)} type="button">
+                          next
+                        </button>
+                      </div>
+                    ) : programStep === 2 ? (
+                      <div className="flex min-h-full flex-col gap-5">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-clay">step 2</p>
+                          <h2 className="mt-2 text-2xl font-semibold">which days do you want to train?</h2>
+                          <div className="mt-5 grid grid-cols-7 gap-1.5">
+                            {WEEKDAY_OPTIONS.map((option) => (
+                              <button
+                                key={option.key}
+                                className={clsx(
+                                  "aspect-square min-w-0 rounded-lg border text-xs font-semibold transition",
+                                  programSelectedDays.includes(option.key)
+                                    ? "border-ink bg-ink text-paper dark:border-paper dark:bg-paper dark:text-ink"
+                                    : "border-line text-ink/60 dark:border-white/15 dark:text-paper/60"
+                                )}
+                                onClick={() => toggleProgramDay(option.key)}
+                                type="button"
+                              >
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="mt-2 text-xs text-ink/45 dark:text-paper/45">
+                            {programSelectedDays.length} day{programSelectedDays.length === 1 ? "" : "s"} a week
+                          </p>
+                        </div>
+
+                        <div className="mt-auto flex gap-2 pt-4">
+                          <button className="flex-1 rounded-full border border-line px-4 py-3 text-sm font-semibold dark:border-white/15" onClick={() => setProgramStep(1)} type="button">
+                            back
+                          </button>
+                          <button
+                            className="flex-1 rounded-full bg-ink px-4 py-3 text-sm font-semibold text-paper disabled:opacity-50 dark:bg-paper dark:text-ink"
+                            disabled={!programSelectedDays.length}
+                            onClick={() => setProgramStep(3)}
+                            type="button"
+                          >
+                            next
+                          </button>
+                        </div>
+                      </div>
+                    ) : programStep === 3 ? (
+                      <div className="flex min-h-full flex-col gap-6">
+
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-clay">step 3</p>
+                          <h2 className="mt-2 text-2xl font-semibold">when should it happen?</h2>
+                        </div>
+
+                        <div>
+                          <p className="mb-2 text-sm text-ink/55 dark:text-paper/55">what time?</p>
+                          <div className="mb-3 grid grid-cols-2 gap-2">
+                            <button
+                              className={clsx(
+                                "min-h-12 rounded-lg border px-3 py-2 text-sm font-semibold",
+                                programTimeMode === "same"
+                                  ? "border-ink bg-ink text-paper dark:border-paper dark:bg-paper dark:text-ink"
+                                  : "border-line text-ink/60 dark:border-white/15 dark:text-paper/60"
+                              )}
+                              onClick={() => setProgramTimeMode("same")}
+                              type="button"
+                            >
+                              same time all week
+                            </button>
+                            <button
+                              className={clsx(
+                                "min-h-12 rounded-lg border px-3 py-2 text-sm font-semibold",
+                                programTimeMode === "per-day"
+                                  ? "border-ink bg-ink text-paper dark:border-paper dark:bg-paper dark:text-ink"
+                                  : "border-line text-ink/60 dark:border-white/15 dark:text-paper/60"
+                              )}
+                              onClick={() => setProgramTimeMode("per-day")}
+                              type="button"
+                            >
+                              different per day
+                            </button>
+                          </div>
+                          {programTimeMode === "same" ? (
+                            <input
+                              className="h-11 w-full rounded-lg border border-line bg-white px-4 text-sm outline-none dark:border-white/15 dark:bg-[#1d1d1a]"
+                              onChange={(event) => setProgramSameTime(event.target.value)}
+                              type="time"
+                              value={programSameTime}
+                            />
+                          ) : (
+                            <div className="grid gap-2">
+                              {orderedProgramDays.map((day) => (
+                                <label key={day} className="flex items-center justify-between gap-3 text-sm font-medium">
+                                  {WEEKDAY_OPTIONS.find((option) => option.key === day)?.label}
+                                  <input
+                                    className="h-10 rounded-lg border border-line bg-white px-3 text-sm outline-none dark:border-white/15 dark:bg-[#1d1d1a]"
+                                    onChange={(event) => setProgramPerDayTimes((current) => ({ ...current, [day]: event.target.value }))}
+                                    type="time"
+                                    value={programPerDayTimes[day] ?? programSameTime}
+                                  />
+                                </label>
+                              ))}
+                              {!orderedProgramDays.length ? <p className="text-xs text-ink/45 dark:text-paper/45">pick training days first.</p> : null}
+                            </div>
+                          )}
+                        </div>
+
+                        <label className="flex flex-col gap-1 text-sm font-medium">
+                          anything else? (injuries, goals, equipment — optional)
+                          <textarea
+                            className="min-h-20 rounded-2xl border border-line bg-white px-4 py-2 text-sm outline-none dark:border-white/15 dark:bg-[#1d1d1a]"
+                            onChange={(event) => setProgramNote(event.target.value)}
+                            value={programNote}
+                          />
+                        </label>
+
+                        <div className="mt-auto flex gap-2 pt-4">
+                          <button className="flex-1 rounded-full border border-line px-4 py-3 text-sm font-semibold dark:border-white/15" onClick={() => setProgramStep(2)} type="button">
+                            back
+                          </button>
+                          <button
+                            className="flex-1 rounded-full bg-ink px-4 py-3 text-sm font-semibold text-paper disabled:opacity-50 dark:bg-paper dark:text-ink"
+                            disabled={!programSelectedDays.length || askingCompanion}
+                            onClick={generateProgramSessions}
+                            type="button"
+                          >
+                            {askingCompanion ? "asking companion..." : "ask companion to build it"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid gap-4">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-clay">step 4</p>
+                          <h2 className="mt-2 text-2xl font-semibold">your program from companion</h2>
+                        </div>
+                        {askingCompanion ? (
+                          <p className="py-8 text-center text-sm text-ink/55 dark:text-paper/55">companion is building your rotation...</p>
+                        ) : generatedSessions.length ? (
+                          <>
+                            <p className="text-sm text-ink/55 dark:text-paper/55">
+                              a {generatedSessions.length}-session rotation, repeating every week from{" "}
+                              {DateTime.fromISO(programStartDate, { zone: profile.preferred_timezone }).toFormat("LLL d")} for {programWeeks} week
+                              {programWeeks === 1 ? "" : "s"}.
+                            </p>
+                            <div className="grid gap-2">
+                              {generatedSessions.map((session, index) => (
+                                <div key={index} className="rounded-2xl border border-line bg-paper/55 p-3 dark:border-white/10 dark:bg-[#1d1d1a]">
+                                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-clay">session {index + 1}</p>
+                                  <p className="mt-1 font-semibold capitalize">{session.focus}</p>
+                                  <p className="mt-1 text-sm text-ink/55 dark:text-paper/55">{session.summary}</p>
+                                  <ul className="mt-2 grid gap-0.5 text-sm text-ink/70 dark:text-paper/70">
+                                    {session.exercises.map((exercise, exIndex) => (
+                                      <li key={exIndex}>
+                                        {exercise.name} — {exercise.prescription}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              ))}
+                            </div>
+
+                            <label className="flex flex-col gap-1 text-sm font-medium">
+                              want changes? tell companion (e.g. "add 2 more", "make session 2 easier")
+                              <div className="flex gap-2">
+                                <input
+                                  className="min-w-0 flex-1 rounded-full border border-line bg-white px-4 py-2 text-sm outline-none dark:border-white/15 dark:bg-[#1d1d1a]"
+                                  onChange={(event) => setProgramNote(event.target.value)}
+                                  placeholder="add 2 more"
+                                  value={programNote}
+                                />
+                                <button
+                                  className="shrink-0 rounded-full border border-line px-4 py-2 text-sm font-semibold disabled:opacity-50 dark:border-white/15"
+                                  disabled={askingCompanion || !programNote.trim()}
+                                  onClick={generateProgramSessions}
+                                  type="button"
+                                >
+                                  refine
+                                </button>
+                              </div>
+                            </label>
+
+                            <button
+                              className="w-full rounded-full bg-ink px-4 py-3 text-sm font-semibold text-paper disabled:opacity-50 dark:bg-paper dark:text-ink"
+                              disabled={creatingProgram}
+                              onClick={confirmProgram}
+                              type="button"
+                            >
+                              {creatingProgram ? "adding..." : "add to calendar"}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <p className="py-4 text-center text-sm text-ink/55 dark:text-paper/55">could not build a rotation. try again.</p>
+                            <button className="rounded-full bg-ink px-4 py-3 text-sm font-semibold text-paper dark:bg-paper dark:text-ink" onClick={generateProgramSessions} type="button">
+                              retry
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          ) : selectedProject.type === "writing" ? (
+            <section className="min-h-[calc(100dvh-13rem)] overflow-hidden rounded-3xl border border-line bg-white/80 shadow-soft dark:border-white/15 dark:bg-[#242420]">
+              <div className="flex items-center justify-between border-b border-line px-4 py-3 dark:border-white/10">
+                <div className="flex items-center gap-2 text-sm text-ink/50 dark:text-paper/50">
+                  <FileText size={16} />
+                  <span>{DateTime.now().setZone(profile.preferred_timezone).toFormat("cccc, LLLL d")}</span>
+                </div>
+                <button className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-paper dark:bg-paper dark:text-ink" disabled={savingEntry || (!entryTitle.trim() && !entryBody.trim())} onClick={saveWritingPage} type="button">
+                  {savingEntry ? "saving..." : "done"}
+                </button>
+              </div>
+              <div className="flex min-h-[calc(100dvh-17rem)] flex-col px-5 py-5">
+                <input
+                  className="w-full bg-transparent text-3xl font-semibold outline-none placeholder:text-ink/25 dark:placeholder:text-paper/25"
+                  onChange={(event) => setEntryTitle(event.target.value)}
+                  placeholder={selectedProject.subtype === "journal" ? "today" : "untitled"}
+                  value={entryTitle}
+                />
+                <textarea
+                  autoFocus
+                  className="mt-4 min-h-[50dvh] flex-1 resize-none bg-transparent text-base leading-7 outline-none placeholder:text-ink/25 dark:placeholder:text-paper/25"
+                  onChange={(event) => setEntryBody(event.target.value)}
+                  placeholder="start writing..."
+                  value={entryBody}
+                />
+                <div className="mt-4 flex items-center justify-between border-t border-line pt-3 text-xs text-ink/40 dark:border-white/10 dark:text-paper/40">
+                  <span>{entryBody.trim() ? entryBody.trim().split(/\s+/).length : 0} words</span>
+                  <span>saved inside this project</span>
+                </div>
+                <div className="mt-3 flex items-center gap-2 rounded-2xl border border-dashed border-line px-4 py-3 text-sm text-ink/35 dark:border-white/15 dark:text-paper/35">
+                  <Sparkles size={16} />
+                  <span className="flex-1">companion for writing isn&apos;t on yet</span>
+                  <span
+                    aria-label="Still figuring out how to make companion genuinely useful for creative writing, not just autocomplete."
+                    className="cursor-help"
+                    title="Still figuring out how to make companion genuinely useful for creative writing, not just autocomplete."
+                  >
+                    <Info size={15} />
+                  </span>
+                </div>
+              </div>
+            </section>
+          ) : (
+            <section className="grid gap-4">
+              <div className="rounded-3xl border border-line bg-white/80 p-5 shadow-soft dark:border-white/15 dark:bg-[#242420]">
+                <div className="text-center">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-clay">
+                    {selectedProject.type === "music" ? "record a stem" : "voice memo"}
+                  </p>
+                  <p className="mt-3 font-mono text-5xl font-light tabular-nums">{countingIn !== null ? `in ${countingIn}` : recordedTime}</p>
+                  <p className="mt-2 text-sm text-ink/45 dark:text-paper/45">
+                    {countingIn !== null ? "get ready" : recording ? "recording" : audioUrl ? "ready to review" : "tap to begin"}
+                  </p>
+                </div>
+                <div className="my-8 flex h-24 items-center justify-center gap-1 overflow-hidden" aria-hidden="true">
+                  {Array.from({ length: 42 }, (_, index) => (
+                    <span
+                      key={index}
+                      className={clsx("w-1 rounded-full transition-all", recording ? "bg-clay" : "bg-ink/15 dark:bg-paper/15")}
+                      style={{ height: `${recording ? 18 + ((index * 17 + recordingSeconds * 11) % 70) : 8 + ((index * 13) % 28)}%` }}
+                    />
+                  ))}
+                </div>
+
+                {selectedProject.type === "music" ? (
+                  <div className="mb-6 grid gap-3">
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div className="border-t border-line pt-3 dark:border-white/10">
+                        <p className="text-ink/45 dark:text-paper/45">tempo</p>
+                        <p className="text-lg font-semibold">{String(selectedProject.settings?.bpm ?? 120)} bpm</p>
+                      </div>
+                      <div className="border-t border-line pt-3 dark:border-white/10">
+                        <p className="text-ink/45 dark:text-paper/45">length</p>
+                        <p className="text-lg font-semibold">{String(selectedProject.settings?.bars ?? 8)} bars</p>
+                      </div>
+                    </div>
+                    <label className="flex items-center justify-between gap-3 border-t border-line pt-3 text-sm font-medium dark:border-white/10">
+                      <span>metronome + count-in</span>
+                      <input checked={metronomeOn} disabled={recording || countingIn !== null} onChange={(event) => setMetronomeOn(event.target.checked)} type="checkbox" />
+                    </label>
+                    {stemEntries.length ? (
+                      <label className="flex items-center justify-between gap-3 text-sm font-medium">
+                        <span>play existing stems while recording</span>
+                        <input
+                          checked={playStemsWhileRecording}
+                          disabled={recording || countingIn !== null}
+                          onChange={(event) => setPlayStemsWhileRecording(event.target.checked)}
+                          type="checkbox"
+                        />
+                      </label>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="flex items-center justify-center">
+                  <button
+                    className={clsx(
+                      "grid h-20 w-20 shrink-0 place-items-center rounded-full border-[5px] border-paper shadow-[0_0_0_1px_rgba(0,0,0,.18)] dark:border-[#242420] disabled:opacity-50",
+                      recording ? "bg-clay text-paper" : "bg-[#b55b48] text-paper"
+                    )}
+                    disabled={countingIn !== null}
+                    onClick={toggleRecording}
+                    aria-label={recording ? "Stop recording" : "Start recording"}
+                    type="button"
+                  >
+                    {recording ? <Square size={22} fill="currentColor" /> : <span className="h-8 w-8 rounded-full bg-current" />}
+                  </button>
+                </div>
+                {audioUrl ? <audio className="mt-6 w-full" controls src={audioUrl} /> : null}
+              </div>
+
+              {audioUrl ? (
+                <div className="rounded-3xl border border-line bg-white/80 p-4 shadow-soft dark:border-white/15 dark:bg-[#242420]">
+                  <input
+                    className="w-full bg-transparent text-xl font-semibold outline-none placeholder:text-ink/25 dark:placeholder:text-paper/25"
+                    onChange={(event) => setEntryTitle(event.target.value)}
+                    placeholder={selectedProject.type === "music" ? "take name" : "voice memo"}
+                    value={entryTitle}
+                  />
+                  {selectedProject.type === "music" ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {["vocals", "guitar", "keyboard", "bass", "drums", "other"].map((option) => (
+                        <button
+                          key={option}
+                          className={clsx(
+                            "rounded-full border px-3 py-1.5 text-xs font-semibold capitalize transition",
+                            instrument === option
+                              ? "border-ink bg-ink text-paper dark:border-paper dark:bg-paper dark:text-ink"
+                              : "border-line text-ink/60 dark:border-white/15 dark:text-paper/60"
+                          )}
+                          onClick={() => setInstrument(option)}
+                          type="button"
+                        >
+                          {option}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  <textarea
+                    className="mt-3 min-h-24 w-full resize-none bg-transparent text-sm leading-6 outline-none placeholder:text-ink/25 dark:placeholder:text-paper/25"
+                    onChange={(event) => setEntryBody(event.target.value)}
+                    placeholder="add a note..."
+                    value={entryBody}
+                  />
+                  <button
+                    className="mt-3 w-full rounded-full bg-ink px-4 py-3 font-semibold text-paper disabled:opacity-50 dark:bg-paper dark:text-ink"
+                    disabled={savingEntry || recording}
+                    onClick={saveAudioNote}
+                    type="button"
+                  >
+                    {savingEntry ? "saving..." : selectedProject.type === "music" ? "save stem" : "save recording"}
+                  </button>
+                </div>
+              ) : null}
+
+              {selectedProject.type === "music" && stemEntries.length ? (
+                <div className="rounded-3xl border border-line bg-white/80 p-4 shadow-soft dark:border-white/15 dark:bg-[#242420]">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-clay">stems · {stemEntries.length}</p>
+                    <button
+                      className="inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-xs font-semibold dark:border-white/15"
+                      onClick={playAllStems}
+                      type="button"
+                    >
+                      <Play size={12} /> play all together
+                    </button>
+                  </div>
+                  <div className="grid gap-3">
+                    {stemEntries.map((entry) => (
+                      <div key={entry.id} className="rounded-2xl border border-line bg-paper/55 p-3 dark:border-white/10 dark:bg-[#1d1d1a]">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate font-semibold">{entry.title}</span>
+                          <span className="shrink-0 rounded-full border border-line px-2 py-0.5 text-[10px] font-semibold uppercase text-ink/55 dark:border-white/15 dark:text-paper/55">
+                            {String(entry.metadata?.instrument ?? "other")}
+                          </span>
+                          {entry.owner_id === profile.id ? (
+                            <button className="shrink-0 text-ink/35 dark:text-paper/35" onClick={() => deleteProjectEntry(entry)} type="button" aria-label={`Delete ${entry.title}`}>
+                              <Trash2 size={14} />
+                            </button>
+                          ) : null}
+                        </div>
+                        {entry.media_url ? <audio className="w-full" controls src={entry.media_url} /> : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {selectedProject.type !== "music" && voiceMemoEntries.length ? (
+                <div className="rounded-3xl border border-line bg-white/80 p-4 shadow-soft dark:border-white/15 dark:bg-[#242420]">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-clay">recordings · {voiceMemoEntries.length}</p>
+                  <div className="grid gap-3">
+                    {voiceMemoEntries.map((entry) => (
+                      <div key={entry.id} className="rounded-2xl border border-line bg-paper/55 p-3 dark:border-white/10 dark:bg-[#1d1d1a]">
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate font-semibold">{entry.title}</span>
+                          {entry.owner_id === profile.id ? (
+                            <button className="shrink-0 text-ink/35 dark:text-paper/35" onClick={() => deleteProjectEntry(entry)} type="button" aria-label={`Delete ${entry.title}`}>
+                              <Trash2 size={14} />
+                            </button>
+                          ) : null}
+                        </div>
+                        {entry.body ? <p className="mb-2 whitespace-pre-wrap text-sm text-ink/65 dark:text-paper/65">{entry.body}</p> : null}
+                        {entry.media_url ? <audio className="w-full" controls src={entry.media_url} /> : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          )}
+
+          <section className="grid gap-3">
+            {entriesLoading ? <p className="text-sm text-ink/55 dark:text-paper/55">Loading project entries...</p> : null}
+            {logEntries.map((entry) => (
+              <article key={entry.id} className="rounded-3xl border border-white/70 bg-white/85 p-4 shadow-soft dark:border-white/15 dark:bg-[#242420]">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-ink/45 dark:text-paper/40">
+                    {DateTime.fromISO(entry.occurred_at).setZone(profile.preferred_timezone).toFormat("LLL d, h:mm a")}
+                  </p>
+                  {entry.owner_id === profile.id ? (
+                    <button className="text-ink/35 transition hover:text-clay dark:text-paper/35" onClick={() => deleteProjectEntry(entry)} type="button" aria-label={`Delete ${entry.title}`}>
+                      <Trash2 size={16} />
+                    </button>
+                  ) : null}
+                </div>
+                <h3 className="mt-1 font-semibold">{entry.title}</h3>
+                {entry.body ? <p className="mt-2 whitespace-pre-wrap text-sm text-ink/65 dark:text-paper/65">{entry.body}</p> : null}
+              </article>
+            ))}
+          </section>
+        </section>
+      ) : !creating && projects.length === 0 ? (
+        <EmptyPanel title="No projects yet" body="Create a project for fitness, writing, or audio." />
+      ) : null}
+    </section>
+  );
+}
+
 function CalendarView({
+  allEvents,
   calendarGroup,
   calendarGroupId,
   eventToOpenId,
   events,
   groups,
+  loggedWorkoutEventIds,
   notifyGroupMembers,
+  onOpenWorkoutLog,
+  onResetWorkout,
   profile,
+  projects,
   reload,
   selectedDayEvents,
   selectedDate,
@@ -2997,13 +4752,18 @@ function CalendarView({
   viewerWeatherByEventId,
   view
 }: {
+  allEvents: EventItem[];
   calendarGroup: Group | null;
   calendarGroupId: string;
   eventToOpenId: string | null;
   events: EventItem[];
   groups: Group[];
+  loggedWorkoutEventIds: Set<string>;
   notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
+  onOpenWorkoutLog: (eventId: string) => void;
+  onResetWorkout: (event: EventItem) => void;
   profile: Profile;
+  projects: ProjectItem[];
   reload: WorkspaceReload;
   selectedDayEvents: EventItem[];
   selectedDate: string;
@@ -3020,15 +4780,29 @@ function CalendarView({
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [eventModalOpen, setEventModalOpen] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [projectFilterId, setProjectFilterId] = useState("all");
+  const fitnessProjectIds = new Set(projects.filter((project) => project.type === "fitness").map((project) => project.id));
+  const eventProjectIds = [...new Set(events.map((event) => event.project_id).filter((id): id is string => Boolean(id)))];
+  const projectFilterOptions = eventProjectIds
+    .map((id) => projects.find((project) => project.id === id))
+    .filter((project): project is ProjectItem => Boolean(project));
+  const filteredEvents = projectFilterId === "all" ? events : events.filter((event) => event.project_id === projectFilterId);
+  const filteredSelectedDayEvents =
+    projectFilterId === "all" ? selectedDayEvents : selectedDayEvents.filter((event) => event.project_id === projectFilterId);
   const [exportGroupId, setExportGroupId] = useState(calendarGroupId);
   const [exportStartDate, setExportStartDate] = useState("");
   const [exportEndDate, setExportEndDate] = useState("");
-  const [eventGroupId, setEventGroupId] = useState(writableGroup?.id ?? "");
-  const editingEvent = editingEventId ? events.find((event) => event.id === editingEventId) ?? null : null;
+  const [eventGroupId, setEventGroupId] = useState(calendarGroupId === "all" ? "personal" : calendarGroupId);
+  const editingEvent = editingEventId ? allEvents.find((event) => event.id === editingEventId) ?? null : null;
   const editableGroups = groups.filter((group) => group.role === "owner" || group.role === "editor");
   const exportGroup = groups.find((group) => group.id === exportGroupId) ?? null;
-  const exportBaseEvents = exportGroupId === "all" ? events : events.filter((event) => event.group_id === exportGroupId);
-  const exportLabel = exportGroup?.name ?? "All groups";
+  const exportBaseEvents =
+    exportGroupId === "all"
+      ? allEvents
+      : exportGroupId === "personal"
+        ? allEvents.filter((event) => !event.group_id && (event.owner_id ?? event.creator_id) === profile.id)
+        : allEvents.filter((event) => event.group_id === exportGroupId);
+  const exportLabel = exportGroupId === "personal" ? "Personal" : exportGroup?.name ?? "All groups";
   const exportStart = exportStartDate ? DateTime.fromISO(exportStartDate, { zone: timezone }).startOf("day") : null;
   const exportEnd = exportEndDate ? DateTime.fromISO(exportEndDate, { zone: timezone }).endOf("day") : null;
   const exportEvents = exportBaseEvents.filter((event) => {
@@ -3042,14 +4816,16 @@ function CalendarView({
       ? `${exportStartDate ? DateTime.fromISO(exportStartDate).toFormat("LLL d, yyyy") : "Start"} to ${exportEndDate ? DateTime.fromISO(exportEndDate).toFormat("LLL d, yyyy") : "End"}`
       : "All dates";
   const formGroup =
-    groups.find((group) => group.id === eventGroupId) ??
-    (editingEvent ? groups.find((group) => group.id === editingEvent.group_id) : null) ??
+    eventGroupId === "personal"
+      ? null
+      : groups.find((group) => group.id === eventGroupId) ??
+    (editingEvent?.group_id ? groups.find((group) => group.id === editingEvent.group_id) : null) ??
     writableGroup;
 
   useEffect(() => {
     if (eventModalOpen || editingEvent) return;
-    setEventGroupId(writableGroup?.id ?? "");
-  }, [eventModalOpen, editingEvent, writableGroup?.id]);
+    setEventGroupId(calendarGroupId === "all" ? "personal" : calendarGroupId);
+  }, [calendarGroupId, eventModalOpen, editingEvent]);
 
   useEffect(() => {
     if (exportModalOpen) return;
@@ -3057,22 +4833,21 @@ function CalendarView({
   }, [calendarGroupId, exportModalOpen]);
 
   useEffect(() => {
+    setProjectFilterId("all");
+  }, [calendarGroupId]);
+
+  useEffect(() => {
     if (!eventToOpenId) return;
-    const event = events.find((item) => item.id === eventToOpenId);
+    const event = allEvents.find((item) => item.id === eventToOpenId);
     if (!event) return;
-    setEditingEventId(event.id);
-    setEventGroupId(event.group_id);
-    setEventModalOpen(true);
+    setSelectedDate(localDateTime(event, timezone).toISODate() ?? selectedDate);
+    setCalendarGroupId(event.group_id ?? "personal");
     setEventToOpenId(null);
-  }, [eventToOpenId, events, setEventToOpenId]);
+  }, [allEvents, eventToOpenId, selectedDate, setCalendarGroupId, setEventToOpenId, setSelectedDate, timezone]);
 
   function openAddEvent(date = selectedDate) {
-    const defaultGroup =
-      calendarGroupId !== "all"
-        ? editableGroups.find((group) => group.id === calendarGroupId)
-        : editableGroups[0] ?? writableGroup;
     setEditingEventId(null);
-    setEventGroupId(defaultGroup?.id ?? "");
+    setEventGroupId(calendarGroupId === "all" ? "personal" : calendarGroupId);
     setSelectedDate(date);
     setEventModalOpen(true);
   }
@@ -3106,71 +4881,108 @@ function CalendarView({
       return;
     }
     if (editingEventId === event.id) setEditingEventId(null);
-    const eventGroup = groups.find((group) => group.id === event.group_id);
+    const eventGroup = event.group_id ? groups.find((group) => group.id === event.group_id) : null;
     const eventDate = localDateTime(event, profile.preferred_timezone).toISODate() ?? selectedDate;
-    await notifyGroupMembers(
-      event.group_id,
-      `${profile.display_name} deleted ${event.title}${eventGroup ? ` from ${eventGroup.name}` : ""}.`,
-      {
-        type: "calendar_event",
-        action: "deleted",
-        eventId: event.id,
-        eventTitle: event.title,
-        eventDate,
-        groupId: event.group_id,
-        summary: "Event deleted"
-      }
-    );
+    if (event.group_id) {
+      await notifyGroupMembers(
+        event.group_id,
+        `${profile.display_name} deleted ${event.title}${eventGroup ? ` from ${eventGroup.name}` : ""}.`,
+        {
+          type: "calendar_event",
+          action: "deleted",
+          eventId: event.id,
+          eventTitle: event.title,
+          eventDate,
+          groupId: event.group_id,
+          summary: "Event deleted"
+        }
+      );
+    }
     await reload();
     setMessage("Calendar event deleted successfully.");
   }
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-[repeat(3,minmax(0,1fr))_minmax(9rem,12rem)]">
-        <div className="col-span-3 flex rounded-full border border-line bg-paper p-1 dark:border-white/15 dark:bg-[#1d1d1a] sm:col-span-3">
-          {(["agenda", "week", "month"] as ViewMode[]).map((mode) => (
-            <button
-              key={mode}
-              className={clsx(
-                "flex-1 rounded-full px-3 py-1.5 text-sm capitalize transition",
-                view === mode ? "bg-ink text-paper dark:bg-paper dark:text-ink" : "text-ink/70 dark:text-paper/70"
-              )}
-              onClick={() => setView(mode)}
-            >
-              {mode}
-            </button>
-          ))}
-        </div>
-        <div className="col-span-3 grid grid-cols-[minmax(0,1fr)_auto] gap-2 sm:col-span-1">
-          <select
-            className="min-w-0 rounded-full border border-line bg-paper px-4 py-2 text-sm font-medium text-ink outline-none dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
-            value={calendarGroupId}
-            onChange={(event) => setCalendarGroupId(event.target.value)}
+      <div className="flex rounded-full border border-line bg-paper p-1 dark:border-white/15 dark:bg-[#1d1d1a]">
+        {(["agenda", "week", "month"] as ViewMode[]).map((mode) => (
+          <button
+            key={mode}
+            className={clsx(
+              "flex-1 rounded-full px-3 py-1.5 text-sm capitalize transition",
+              view === mode ? "bg-ink text-paper dark:bg-paper dark:text-ink" : "text-ink/70 dark:text-paper/70"
+            )}
+            onClick={() => setView(mode)}
           >
-            <option value="all">All groups</option>
+            {mode}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <label className="min-w-0 flex-1">
+          <span className="sr-only">Calendar</span>
+          <select
+            className="h-10 w-full rounded-lg border border-line bg-paper px-3 text-sm font-semibold text-ink outline-none transition focus:border-ink dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper dark:focus:border-paper"
+            onChange={(event) => setCalendarGroupId(event.target.value)}
+            value={calendarGroupId}
+          >
+            <option value="personal">Personal</option>
             {groups.map((group) => (
               <option key={group.id} value={group.id}>
                 {group.name}
               </option>
             ))}
+            <option value="all">All groups</option>
           </select>
-          <button
-            className="rounded-full border border-line bg-paper px-4 py-2 text-sm font-semibold text-ink dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
-            onClick={() => {
-              setExportGroupId(calendarGroupId);
-              setExportModalOpen(true);
-            }}
-            type="button"
-          >
-            Export
-          </button>
-        </div>
+        </label>
+        <button
+          className="shrink-0 rounded-full border border-line bg-paper px-4 py-2 text-sm font-semibold text-ink dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+          onClick={() => {
+            setExportGroupId(calendarGroupId);
+            setExportModalOpen(true);
+          }}
+          type="button"
+        >
+          Export
+        </button>
       </div>
 
+      {projectFilterOptions.length ? (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          <button
+            className={clsx(
+              "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+              projectFilterId === "all"
+                ? "border-ink bg-ink text-paper dark:border-paper dark:bg-paper dark:text-ink"
+                : "border-line text-ink/60 dark:border-white/15 dark:text-paper/60"
+            )}
+            onClick={() => setProjectFilterId("all")}
+            type="button"
+          >
+            All
+          </button>
+          {projectFilterOptions.map((project) => (
+            <button
+              key={project.id}
+              className={clsx(
+                "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
+                projectFilterId === project.id
+                  ? "border-ink bg-ink text-paper dark:border-paper dark:bg-paper dark:text-ink"
+                  : "border-line text-ink/60 dark:border-white/15 dark:text-paper/60"
+              )}
+              onClick={() => setProjectFilterId(project.id)}
+              type="button"
+            >
+              {project.name} · {(project.subtype ?? project.type).replaceAll("_", " ")}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       <CalendarSurface
-        canCreateEvent={Boolean(editableGroups.length)}
-        events={events}
+        canCreateEvent={Boolean(profile)}
+        events={filteredEvents}
         onCreateEvent={(date) => openAddEvent(date)}
         selectedDate={selectedDate}
         setSelectedDate={setSelectedDate}
@@ -3181,27 +4993,34 @@ function CalendarView({
       <div className="grid gap-4">
         <EventList
           editableGroups={editableGroups.map((group) => group.id)}
-          emptyBody={editableGroups.length ? "Double-tap a calendar day to add a shared plan." : "Create or join a group as a member before adding calendar plans."}
-          events={selectedDayEvents}
+          emptyBody={calendarGroupId === "personal" ? "Double-tap a calendar day to add a personal plan." : "Double-tap a calendar day to add a shared plan."}
+          events={filteredSelectedDayEvents}
+          fitnessProjectIds={fitnessProjectIds}
+          loggedWorkoutEventIds={loggedWorkoutEventIds}
           onDelete={(event) => void deleteEvent(event)}
           onEdit={(event) => {
-            setCalendarGroupId(event.group_id);
+            if (event.project_id && fitnessProjectIds.has(event.project_id)) {
+              onOpenWorkoutLog(event.id);
+              return;
+            }
+            setCalendarGroupId(event.group_id ?? "personal");
             setEditingEventId(event.id);
-            setEventGroupId(event.group_id);
+            setEventGroupId(event.group_id ?? "personal");
             setEventModalOpen(true);
           }}
+          onResetWorkout={onResetWorkout}
           timezone={timezone}
           viewerWeatherByEventId={viewerWeatherByEventId}
         />
       </div>
-      {eventModalOpen && formGroup ? (
+      {eventModalOpen && (eventGroupId === "personal" || formGroup) ? (
         <div
           className="fixed inset-0 z-40 flex items-start justify-center bg-black/45 px-3 pt-[calc(5.75rem+env(safe-area-inset-top))] text-ink backdrop-blur-sm dark:bg-black/55"
           onClick={closeEventModal}
         >
           <EventForm
             editingEvent={editingEvent}
-            group={formGroup}
+            group={eventGroupId === "personal" ? null : formGroup}
             groups={editableGroups}
             onCancelEdit={closeEventModal}
             onGroupChange={setEventGroupId}
@@ -3249,6 +5068,7 @@ function CalendarView({
                   value={exportGroupId}
                 >
                   <option value="all">All groups</option>
+                  <option value="personal">Personal</option>
                   {groups.map((group) => (
                     <option key={group.id} value={group.id}>
                       {group.name}
@@ -3325,13 +5145,14 @@ function BottomNav({
     ["connections", "Connections", <Users key="connections" size={18} />],
     ["groups", "Groups", <Users key="groups" size={18} />],
     ["calendar", "Calendar", <CalendarDays key="calendar" size={18} />],
+    ["projects", "Projects", <FolderOpen key="projects" size={18} />],
     ["gallery", "Gallery", <ImageIcon key="gallery" size={18} />],
     ["profile", "Profile", <User key="profile" size={18} />]
   ];
 
   return (
     <nav className="app-bottom-nav fixed inset-x-0 bottom-0 z-10 border-t border-line bg-white/92 px-3 pt-2 backdrop-blur dark:border-white/15 dark:bg-[#1d1d1a]/95">
-      <div className="mx-auto grid max-w-lg grid-cols-5 gap-1">
+      <div className="mx-auto grid max-w-lg grid-cols-6 gap-1">
         {items.map(([tab, label, icon]) => (
           <button
             key={tab}
@@ -3609,7 +5430,7 @@ function PhotoViewer({
         ) : null}
 
       </div>
-      <div className="relative h-[calc(10rem+env(safe-area-inset-bottom))] shrink-0 overflow-hidden border-t border-white/10 bg-[#1d1d1a] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-paper">
+      <div className="relative z-10 h-[calc(10rem+env(safe-area-inset-bottom))] shrink-0 border-t border-white/10 bg-[#1d1d1a] p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-paper">
         <div className="flex items-start justify-between gap-3">
           <button
             className={clsx(
@@ -3647,6 +5468,7 @@ function PhotoViewer({
             <label className="flex flex-col gap-2 text-sm font-medium">
               Caption
               <textarea
+                autoFocus
                 className="min-h-24 rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-base text-paper outline-none focus:border-white"
                 value={captionDraft}
                 onChange={(event) => setCaptionDraft(event.target.value)}
@@ -4024,6 +5846,181 @@ function InvitePrompt({
           </button>
         </div>
       </section>
+    </div>
+  );
+}
+
+function parseWorkoutDescription(description: string | null) {
+  return (description ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const separatorIndex = line.indexOf(":");
+      if (separatorIndex === -1) return { name: line, prescription: "" };
+      return { name: line.slice(0, separatorIndex).trim(), prescription: line.slice(separatorIndex + 1).trim() };
+    });
+}
+
+function WorkoutLogSheet({
+  event,
+  getAuthHeaders,
+  onClose,
+  onLogged,
+  profile,
+  setMessage
+}: {
+  event: EventItem | null;
+  getAuthHeaders: (options?: { refresh?: boolean }) => Promise<{ Authorization: string } | null>;
+  onClose: () => void;
+  onLogged: () => void;
+  profile: Profile;
+  setMessage: (value: string) => void;
+}) {
+  const [checked, setChecked] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [started, setStarted] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const exercises = event ? parseWorkoutDescription(event.description) : [];
+
+  useEffect(() => {
+    setStarted(false);
+    setElapsedSeconds(0);
+    setChecked([]);
+  }, [event?.id]);
+
+  useEffect(() => {
+    if (!started) return;
+    const timer = window.setInterval(() => setElapsedSeconds((current) => current + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [started]);
+
+  if (!event) return null;
+
+  function toggle(name: string) {
+    setChecked((current) => (current.includes(name) ? current.filter((item) => item !== name) : [...current, name]));
+  }
+
+  async function logWorkout() {
+    if (!event || saving) return;
+    const headers = await getAuthHeaders();
+    if (!headers || !event.project_id) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/projects/${event.project_id}/entries`, {
+        body: JSON.stringify({
+          body: event.description ?? "",
+          kind: "workout",
+          metadata: { checkedExercises: checked, durationSeconds: elapsedSeconds, loggedFromEventId: event.id },
+          occurredAt: event.starts_at_utc,
+          title: event.title
+        }),
+        headers: { ...headers, "content-type": "application/json" },
+        method: "POST"
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setMessage(payload.error ?? "Could not log this workout.");
+        return;
+      }
+      setMessage("Workout logged.");
+      onLogged();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const stopwatch = `${String(Math.floor(elapsedSeconds / 60)).padStart(2, "0")}:${String(elapsedSeconds % 60).padStart(2, "0")}`;
+
+  return (
+    <div className="session-fullscreen-in fixed inset-0 z-50 flex flex-col bg-paper text-ink dark:bg-[#151515] dark:text-paper">
+      <div className="flex items-center justify-between gap-3 border-b border-line px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] dark:border-white/10">
+        <button
+          aria-label="Exit without finishing"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line dark:border-white/15"
+          onClick={onClose}
+          type="button"
+        >
+          <X size={18} />
+        </button>
+        <div className="flex items-center gap-2 rounded-full border border-line bg-white/70 px-4 py-1.5 font-mono text-lg font-semibold tabular-nums dark:border-white/15 dark:bg-white/5">
+          <Clock3 className="text-clay" size={16} />
+          {stopwatch}
+        </div>
+        <button
+          aria-label="Finish session"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-ink text-paper disabled:opacity-30 dark:bg-paper dark:text-ink"
+          disabled={saving || !started}
+          onClick={logWorkout}
+          type="button"
+        >
+          {saving ? <RefreshCw className="animate-spin" size={18} /> : <CheckCircle2 size={20} />}
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-4 py-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-clay">
+          {DateTime.fromISO(event.starts_at_utc).setZone(profile.preferred_timezone).toFormat("cccc, LLL d · h:mm a")}
+        </p>
+        <h2 className="mt-1 text-3xl font-semibold capitalize">{event.title}</h2>
+
+        {!started ? (
+          <div className="mt-8 flex flex-col items-center gap-5 text-center">
+            <p className="text-sm text-ink/55 dark:text-paper/55">
+              {exercises.length ? `${exercises.length} exercise${exercises.length === 1 ? "" : "s"} planned` : "no session details on this event"}
+            </p>
+            <button
+              className="flex h-28 w-28 flex-col items-center justify-center gap-1 rounded-full bg-ink text-paper shadow-soft dark:bg-paper dark:text-ink"
+              onClick={() => setStarted(true)}
+              type="button"
+            >
+              <Play fill="currentColor" size={26} />
+              <span className="text-sm font-semibold">start</span>
+            </button>
+            <p className="text-xs text-ink/40 dark:text-paper/40">the timer starts once you tap start</p>
+          </div>
+        ) : (
+          <>
+            <p className="mt-1 text-sm text-ink/50 dark:text-paper/50">
+              {checked.length}/{exercises.length} done
+            </p>
+            {exercises.length ? (
+              <div className="mt-5 grid gap-2">
+                {exercises.map((exercise, index) => {
+                  const key = `${exercise.name}-${index}`;
+                  const done = checked.includes(key);
+                  return (
+                    <button
+                      key={key}
+                      className="flex items-center gap-3 rounded-2xl border border-line bg-paper/70 p-4 text-left dark:border-white/10 dark:bg-[#1d1d1a]"
+                      onClick={() => toggle(key)}
+                      type="button"
+                    >
+                      <span
+                        className={clsx(
+                          "grid h-8 w-8 shrink-0 place-items-center rounded-lg border-2",
+                          done ? "border-clay bg-clay text-paper" : "border-line dark:border-white/20"
+                        )}
+                      >
+                        {done ? <Check size={16} /> : null}
+                      </span>
+                      <span className={clsx("min-w-0", done && "opacity-45")}>
+                        <span className={clsx("block truncate font-semibold capitalize", done && "line-through")}>{exercise.name}</span>
+                        {exercise.prescription ? <span className="text-sm text-ink/50 dark:text-paper/50">{exercise.prescription}</span> : null}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="mt-5 rounded-2xl border border-dashed border-line p-5 text-center text-sm text-ink/45 dark:border-white/15 dark:text-paper/45">
+                no session details on this event
+              </p>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -5270,6 +7267,7 @@ function GroupGallery({
   members,
   notifyGroupMembers,
   onOpenGroupCalendar,
+  onOpenGroupProjects,
   onOpenProfile,
   openPhoto,
   photos,
@@ -5282,6 +7280,7 @@ function GroupGallery({
   members: GroupMember[];
   notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   onOpenGroupCalendar: (groupId: string) => void;
+  onOpenGroupProjects: (groupId: string) => void;
   onOpenProfile: (profileId: string, displayName?: string) => void;
   openPhoto: OpenPhoto;
   photos: PhotoItem[];
@@ -5345,6 +7344,14 @@ function GroupGallery({
             type="button"
           >
             <CalendarDays size={20} />
+          </button>
+          <button
+            aria-label={`${group.name} projects`}
+            className="grid h-10 w-10 place-items-center"
+            onClick={() => onOpenGroupProjects(group.id)}
+            type="button"
+          >
+            <FolderOpen size={20} />
           </button>
           <button
             aria-label={`${group.name} members`}
@@ -5784,23 +7791,46 @@ function EventList({
   editableGroups,
   emptyBody,
   events,
+  fitnessProjectIds,
+  loggedWorkoutEventIds,
   onDelete,
   onEdit,
+  onResetWorkout,
   timezone,
   viewerWeatherByEventId
 }: {
   editableGroups: string[];
   emptyBody: string;
   events: EventItem[];
+  fitnessProjectIds: Set<string>;
+  loggedWorkoutEventIds: Set<string>;
   onDelete: (event: EventItem) => void;
   onEdit: (event: EventItem) => void;
+  onResetWorkout: (event: EventItem) => void;
   timezone: string;
   viewerWeatherByEventId: Record<string, EventWeather>;
 }) {
   const [actionEventId, setActionEventId] = useState<string | null>(null);
+  const [launchingId, setLaunchingId] = useState<string | null>(null);
 
   if (!events.length) {
     return <EmptyPanel title="No events" body={emptyBody} />;
+  }
+
+  function activateWorkout(event: EventItem) {
+    setLaunchingId(event.id);
+    window.setTimeout(() => {
+      onEdit(event);
+      setLaunchingId(null);
+    }, 260);
+  }
+
+  function handleFitnessTap(event: EventItem) {
+    if (loggedWorkoutEventIds.has(event.id)) {
+      onResetWorkout(event);
+      return;
+    }
+    activateWorkout(event);
   }
 
   return (
@@ -5808,7 +7838,9 @@ function EventList({
       {events.map((event) => {
         const local = localDateTime(event, timezone);
         const original = sourceDateTime(event);
-        const canEdit = editableGroups.includes(event.group_id);
+        const canEdit = event.group_id ? editableGroups.includes(event.group_id) : true;
+        const isFitnessEvent = Boolean(event.project_id && fitnessProjectIds.has(event.project_id));
+        const isCompleted = isFitnessEvent && loggedWorkoutEventIds.has(event.id);
         const weatherEmoji = eventHasWeatherPlace(event)
           ? event.weather_emoji ?? ""
           : viewerWeatherByEventId[event.id]?.emoji ?? "";
@@ -5819,11 +7851,41 @@ function EventList({
             className="rounded-lg border border-white/70 bg-white/85 p-4 shadow-soft backdrop-blur dark:border-white/15 dark:bg-[#242420]"
           >
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-              <button className="min-w-0 text-left" onClick={() => (canEdit ? onEdit(event) : setActionEventId(event.id))} type="button">
-                <h3 className="line-clamp-2 break-words text-lg font-semibold leading-snug">{event.title}</h3>
+              <button
+                className="min-w-0 text-left"
+                onClick={() => {
+                  if (isFitnessEvent) {
+                    handleFitnessTap(event);
+                    return;
+                  }
+                  if (canEdit) onEdit(event);
+                  else setActionEventId(event.id);
+                }}
+                type="button"
+              >
+                <h3 className="line-clamp-2 flex items-center gap-1.5 break-words text-lg font-semibold leading-snug">
+                  {isFitnessEvent ? (
+                    <Dumbbell className={clsx("shrink-0", isCompleted ? "text-emerald-500" : "text-clay")} size={16} />
+                  ) : null}
+                  <span className="min-w-0">{event.title}</span>
+                </h3>
                 {event.location ? <p className="text-sm text-ink/60 dark:text-paper/60">{event.location}</p> : null}
               </button>
               <div className="flex shrink-0 items-start gap-2">
+                {isFitnessEvent ? (
+                  <button
+                    aria-label={isCompleted ? `${event.title} already logged` : `Log ${event.title}`}
+                    className={clsx(
+                      "grid h-9 w-9 place-items-center rounded-full border",
+                      isCompleted ? "border-emerald-400/50 bg-emerald-400/15 text-emerald-500" : "border-clay/40 bg-clay/10 text-clay",
+                      launchingId === event.id && "session-launch-pulse"
+                    )}
+                    onClick={() => handleFitnessTap(event)}
+                    type="button"
+                  >
+                    {isCompleted ? <CheckCircle2 size={17} /> : <Dumbbell size={17} />}
+                  </button>
+                ) : null}
                 <div className="rounded-lg bg-moss px-3 py-2 text-right text-sm font-medium text-white">
                   <div>{local.toFormat("h:mm a")}</div>
                   <div className="text-xs opacity-80">{local.toFormat("LLL d")}</div>
@@ -5915,12 +7977,12 @@ function EventForm({
   setMessage
 }: {
   editingEvent: EventItem | null;
-  group: Group;
+  group: Group | null;
   groups: Group[];
   notifyGroupMembers: (groupId: string, message: string, metadata?: Record<string, unknown>) => Promise<void>;
   onCancelEdit: () => void;
-  onGroupChange: (groupId: string) => void;
-  onSaved: (groupId: string, selectedDate: string) => void;
+  onGroupChange: (calendarId: string) => void;
+  onSaved: (calendarId: string, selectedDate: string) => void;
   profile: Profile;
   selectedDate: string;
   reload: WorkspaceReload;
@@ -5982,11 +8044,12 @@ function EventForm({
         starts_at_utc: instant.toUTC().toISO(),
         source_timezone: timezone
       };
+      const targetGroupId = group?.id ?? null;
 
       const { data: savedEvent, error } = editingEvent
         ? await supabase
             .from("events")
-            .update({ ...payload, group_id: group.id })
+            .update({ ...payload, group_id: targetGroupId })
             .eq("id", editingEvent.id)
             .select("*")
             .single()
@@ -5994,8 +8057,9 @@ function EventForm({
             .from("events")
             .insert({
               ...payload,
-              group_id: group.id,
-              creator_id: profile.id
+              group_id: targetGroupId,
+              creator_id: profile.id,
+              owner_id: profile.id
             })
             .select("*")
             .single();
@@ -6023,21 +8087,23 @@ function EventForm({
       const savedLocalDate = DateTime.fromISO(payload.starts_at_utc ?? "", { zone: "utc" })
         .setZone(profile.preferred_timezone)
         .toISODate();
-      await notifyGroupMembers(
-        group.id,
-        `${profile.display_name} ${action} an event in ${group.name}.`,
-        {
-          type: "calendar_event",
-          action,
-          eventId: savedEvent?.id ?? editingEvent?.id,
-          eventTitle: payload.title,
-          eventDate: savedLocalDate ?? date,
-          startsAtUtc: payload.starts_at_utc,
-          groupId: group.id,
-          summary: editingEvent ? `${payload.title}: ${changeSummary}` : undefined
-        }
-      );
-      onSaved(group.id, savedLocalDate ?? date);
+      if (group) {
+        await notifyGroupMembers(
+          group.id,
+          `${profile.display_name} ${action} an event in ${group.name}.`,
+          {
+            type: "calendar_event",
+            action,
+            eventId: savedEvent?.id ?? editingEvent?.id,
+            eventTitle: payload.title,
+            eventDate: savedLocalDate ?? date,
+            startsAtUtc: payload.starts_at_utc,
+            groupId: group.id,
+            summary: editingEvent ? `${payload.title}: ${changeSummary}` : undefined
+          }
+        );
+      }
+      onSaved(group?.id ?? "personal", savedLocalDate ?? date);
       setTitle("");
       setDescription("");
       setLocation("");
@@ -6054,7 +8120,7 @@ function EventForm({
     }
   }
 
-  const canEdit = group.role === "owner" || group.role === "editor";
+  const canEdit = !group || group.role === "owner" || group.role === "editor";
   const formDisabled = !canEdit || saving;
 
   return (
@@ -6079,13 +8145,14 @@ function EventForm({
       </div>
       <form className="flex flex-col gap-3" onSubmit={saveEvent}>
         <label className="flex flex-col gap-1 text-sm font-medium">
-          Group
+          Calendar
           <select
-            className="rounded-full border border-line bg-white px-3 py-2 text-sm font-normal text-ink outline-none transition focus:border-moss disabled:opacity-50 dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
-            value={group.id}
+            className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm font-normal text-ink outline-none transition focus:border-moss disabled:opacity-50 dark:border-white/15 dark:bg-[#1d1d1a] dark:text-paper"
+            value={group?.id ?? "personal"}
             onChange={(event) => onGroupChange(event.target.value)}
             disabled={formDisabled}
           >
+            <option value="personal">Personal</option>
             {groups.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.name}
